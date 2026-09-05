@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+printf '%s\n' "$@" > "${CAPTURE_FILE:?CAPTURE_FILE must be set}"
