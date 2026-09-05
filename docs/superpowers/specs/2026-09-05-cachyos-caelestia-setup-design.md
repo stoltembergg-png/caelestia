@@ -16,7 +16,11 @@ The setup installs and configures:
 - Caelestia Shell, Caelestia CLI, Quickshell, local pt-BR translation, and the
   current local Caelestia overrides.
 - Hyprland Lua configuration, the current monitor profile, dock integration,
-  Fish, and the `hyprfocus` plugin rebuilt for the installed Hyprland version.
+  Fish, and the official `hyprfocus` plugin from
+  `https://github.com/hyprwm/hyprland-plugins`, installed through `hyprpm` for
+  the installed Hyprland version.
+- Zen Browser from the CachyOS `zen-browser-bin` package, with its launcher
+  referenced by name instead of the current manually extracted executable.
 - `nwg-dock-hyprland` styling and dynamic Caelestia color integration.
 - Pamac for Arch/AUR, Flatpak with Flathub, and Bazaar for Flatpak discovery.
 - Btrfs/Snapper maintenance, weekly TRIM, monthly scrub, and `fwupd` auditing.
@@ -110,12 +114,15 @@ cachyos-caelestia-setup/
    manifest. The installer does not use a partial database refresh.
 5. Flatpak is configured with the user-level Flathub remote and optional
    manifest entries are installed.
-6. Versioned configuration files are copied to `~/.config`. Copy operations
-   preserve backups and do not use unresolved home-directory paths from the
-   source tree.
-7. `hyprfocus` is acquired and compiled through the supported Hyprland plugin
-   mechanism for the installed compositor version. The repository never stores
-   the host-specific `.so` binary.
+6. Versioned configuration templates are copied to `~/.config`. The installer
+   substitutes only approved runtime values such as `$HOME`, the XDG pictures
+   directory, the plugin path, and the optional Zen executable path. Copy
+   operations preserve backups and never publish the source machine's absolute
+   home directory. The Zen binding uses the package-provided executable and is
+   omitted with a clear message when that optional package is skipped.
+7. `hyprpm update`, `hyprpm add https://github.com/hyprwm/hyprland-plugins`,
+   `hyprpm enable hyprfocus`, and `hyprpm reload -n` install and load the
+   official plugin. The repository never stores the host-specific `.so` binary.
 8. User services for the dock/theme integration and system timers for TRIM,
    Snapper cleanup/timeline, and Btrfs scrub are enabled when their dependencies
    are present.
@@ -127,10 +134,16 @@ cachyos-caelestia-setup/
 The project versions only portable configuration and standard Caelestia
 wallpapers. Before adding source files, a capture check rejects:
 
-- absolute `/home/gabriel` paths;
+- absolute home-directory paths that are not approved placeholders;
 - SSH keys, private-key headers, token-like values, and common credential file
   names;
 - host-specific binary artifacts, including `hyprfocus.so`.
+
+Approved placeholders are `__HOME__`, `__WALLPAPER_DIR__`, and
+`__HYPRFOCUS_PLUGIN__`; the installer replaces them with values derived from
+the target user's environment or skips the optional plugin when it is
+unavailable. The Zen configuration uses a stable command name supplied by the
+`zen-browser-bin` package and does not encode a home-directory path.
 
 The current monitor profile is intentionally versioned because the primary use
 case is this same system. It is isolated so `--skip-monitor` is exact and
