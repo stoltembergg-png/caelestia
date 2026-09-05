@@ -135,6 +135,7 @@ print_package_plan_group() {
 
 print_package_plan() {
   log_info 'Package plan:'
+  log_info '  official-system-update: pacman -Syu (confirmed before execution)'
   print_package_plan_group 'already-installed (official)' 'official: ' "${OFFICIAL_INSTALLED[@]}"
   print_package_plan_group 'already-installed (aur)' 'aur: ' "${AUR_INSTALLED[@]}"
   print_package_plan_group 'to-install (official)' 'official: ' "${OFFICIAL_TO_INSTALL[@]}"
@@ -145,6 +146,8 @@ print_package_plan() {
 
 apply_package_plan() {
   local plan_status
+  local -a official_transaction=(-Syu)
+
   if plan_packages; then
     plan_status=0
   else
@@ -156,22 +159,19 @@ apply_package_plan() {
     return $?
   fi
 
-  if (( ${#OFFICIAL_TO_INSTALL[@]} == 0 && ${#AUR_TO_INSTALL[@]} == 0 )); then
-    log_info 'All required packages are already installed; no package transaction is needed.'
-    return 0
-  fi
-
   confirm 'Apply the package plan?' || {
     log_warn 'Package plan was not confirmed; no package transaction was started.'
     return 1
   }
 
   if (( ${#OFFICIAL_TO_INSTALL[@]} > 0 )); then
-    if (( ${DRY_RUN:-0} )); then
-      run pacman -Syu --needed "${OFFICIAL_TO_INSTALL[@]}"
-    else
-      run_privileged pacman -Syu --needed "${OFFICIAL_TO_INSTALL[@]}"
-    fi
+    official_transaction+=(--needed "${OFFICIAL_TO_INSTALL[@]}")
+  fi
+
+  if (( ${DRY_RUN:-0} )); then
+    run pacman "${official_transaction[@]}"
+  else
+    run_privileged pacman "${official_transaction[@]}"
   fi
 
   if (( ${#AUR_TO_INSTALL[@]} > 0 )); then

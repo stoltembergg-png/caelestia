@@ -97,6 +97,22 @@ source_packages() {
   [ ! -e "$audit" ]
 }
 
+@test "all-installed packages still run one confirmed official update without paru" {
+  manifest_root="$BATS_TEST_TMPDIR/repo"
+  mkdir -p "$manifest_root/packages"
+  printf 'official-one\n' > "$manifest_root/packages/official.txt"
+  printf 'aur-one\n' > "$manifest_root/packages/aur.txt"
+
+  run env PATH="$fake_bin:$PATH" PACKAGE_MANIFEST_ROOT="$manifest_root" PACKAGE_AUDIT="$audit" \
+    FAKE_PACMAN_INSTALLED='official-one aur-one' \
+    bash -c 'source "$1"; source "$2"; ASSUME_YES=1; run_privileged() { run "$@"; }; apply_package_plan' _ \
+    "$repo_root/install.sh" "$repo_root/lib/packages.sh"
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$audit")" = 'pacman -Syu' ]
+  [ "$(grep -c '^paru ' "$audit" || true)" -eq 0 ]
+}
+
 @test "only the explicit AUR manifest reaches paru and yay is never invoked" {
   manifest_root="$BATS_TEST_TMPDIR/repo"
   mkdir -p "$manifest_root/packages"
