@@ -99,13 +99,14 @@ main() {
     return 0
   fi
 
-  setup_workspace
   print_selected_options
 
   if (( DRY_RUN )); then
     log_info 'Dry-run contract validated; task modules will supply planned actions in later tasks.'
     return 0
   fi
+
+  setup_workspace
 
   if ! preflight; then
     die 'Preflight failed; no installation actions were performed.'

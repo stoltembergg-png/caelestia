@@ -133,8 +133,8 @@ check_network() {
 }
 
 check_sudo() {
-  if ! sudo -v; then
-    die 'sudo authentication failed. Authenticate in this terminal and retry.'
+  if ! command -v sudo >/dev/null 2>&1; then
+    die 'sudo is unavailable. Install or enable sudo before retrying.'
     return $?
   fi
 }
@@ -163,7 +163,9 @@ preflight() {
   local failed=0
 
   check_bash_version || failed=1
-  check_interactive_terminal || failed=1
+  if ! check_interactive_terminal; then
+    return 1
+  fi
   check_supported_distribution || failed=1
   check_required_commands || failed=1
   check_network || failed=1

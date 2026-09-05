@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+: "${FIXTURE_AUDIT:?FIXTURE_AUDIT must be set}"
+printf 'mktemp\n' >> "$FIXTURE_AUDIT"
+printf '%s\n' "${TMPDIR:-/tmp}/fixture-workspace"

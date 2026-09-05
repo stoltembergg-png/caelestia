@@ -25,6 +25,16 @@ setup() {
   [[ "$output" == *"skip-monitor=yes"* ]]
 }
 
+@test "dry-run does not create a temporary workspace" {
+  audit="$BATS_TEST_TMPDIR/mktemp-called"
+
+  run env PATH="$fake_bin:$PATH" FIXTURE_AUDIT="$audit" \
+    bash "$repo_root/install.sh" --dry-run
+
+  [ "$status" -eq 0 ]
+  [ ! -e "$audit" ]
+}
+
 @test "unknown options exit with usage status" {
   run bash "$repo_root/install.sh" --not-an-option
 
@@ -75,4 +85,15 @@ setup() {
 
   [ "$status" -eq 143 ]
   [ ! -e "${lines[0]}" ]
+}
+
+@test "invalid terminal short-circuits before sudo authentication" {
+  audit="$BATS_TEST_TMPDIR/sudo-called"
+
+  run env PATH="$fake_bin:$PATH" FIXTURE_AUDIT="$audit" TERM=dumb \
+    XDG_CURRENT_DESKTOP=Hyprland bash -c 'source "$1"; preflight' _ \
+    "$repo_root/install.sh"
+
+  [ "$status" -ne 0 ]
+  [ ! -e "$audit" ]
 }
