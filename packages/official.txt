@@ -1,0 +1,28 @@
+# Core shell and desktop session
+fish
+flatpak
+fwupd
+hyprland
+nwg-dock-hyprland
+pamac-aur
+
+# Filesystem and maintenance
+snapper
+btrfs-progs
+btrfs-assistant
+
+# Applications and desktop utilities
+bazaar
+flameshot
+swappy
+playerctl
+pavucontrol
+cliphist
+wl-clipboard
+slurp
+grim
+wl-gammarelay-rs
+
+# Fonts
+ttf-cascadia-code-nerd
+ttf-material-symbols-variable

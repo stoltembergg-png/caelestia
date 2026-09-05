@@ -1,0 +1,2 @@
+# Optional Flatpak identifiers are intentionally empty until exact IDs are
+# verified against Flathub. Never add a guessed application identifier.
