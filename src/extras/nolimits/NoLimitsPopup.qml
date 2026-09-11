@@ -2,13 +2,18 @@
 // Port 1:1 da UI (4 abas: Limits/Memory/Activity/Settings). Adaptações de port:
 //  - imports relativos do Serpantinum -> shims qs.extras / qs.extras.reusables;
 //  - sem dependência da janela da barra/IPC: o host (NoLimitsOverlay) controla a
-//    visibilidade e lê NoLimits.visible / NoLimits.showRequested.
+//    visibilidade e lê NoLimits.visible / NoLimits.showRequested;
+//  - o painel usa a superfície opaca do core (Colours.palette.m3surfaceContainer)
+//    em vez de ThemeBackend.base (tPalette, ~85% de opacidade): como este
+//    StyledWindow não recebe blur do compositor, a transparência deixava o texto
+//    da janela atrás vazar ("ghosting") por trás do header/abas.
 
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import qs.extras
 import qs.extras.reusables
+import qs.services
 
 Item {
     id: window
@@ -221,7 +226,7 @@ Item {
             id: frame
             anchors.fill: parent
             radius: ThemeBackend.borderRadius
-            color: ThemeBackend.base
+            color: Colours.palette.m3surfaceContainer
             border.width: 0
             clip: true
 

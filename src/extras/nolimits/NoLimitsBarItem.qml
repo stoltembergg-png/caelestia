@@ -213,6 +213,9 @@ StyledRect {
         id: content
 
         anchors.centerIn: parent
+        // Folga horizontal para o texto percentual não encostar nas bordas da
+        // cápsula; o label usa HorizontalFit para encolher só quando necessário.
+        width: Tokens.sizes.bar.innerWidth - Tokens.padding.small
         spacing: Tokens.spacing.extraSmall
 
         Image {
@@ -236,10 +239,13 @@ StyledRect {
         }
 
         StyledText {
+            Layout.fillWidth: true
             Layout.alignment: Qt.AlignHCenter
             visible: root.barText() !== ""
             text: root.barText()
             horizontalAlignment: Text.AlignHCenter
+            fontSizeMode: Text.HorizontalFit
+            minimumPixelSize: 9
             font: Tokens.font.label.small
             color: root.displayColour
         }
