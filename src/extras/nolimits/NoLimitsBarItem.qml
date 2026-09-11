@@ -1,17 +1,19 @@
 // Portado de Serpantinum: src/quickshell/bar/modules/KodexBarWidget.qml (AGPL-3.0)
 // Cápsula VERTICAL para a barra esquerda do Caelestia (~40px de largura):
-// ícone do provedor de pior severidade + percentual, com badge de handoffs e
-// ponto de offline discretos nos cantos. Clique esquerdo -> NoLimits.toggle();
-// clique direito -> cicla o displayMode (alerts/worst/full).
+// lista TODOS os provedores habilitados, cada um com seu ícone e o percentual da
+// janela mais crítica ("worstPct"), empilhados. Badge de handoffs e ponto de
+// offline discretos nos cantos. Clique esquerdo -> NoLimits.toggle(); clique
+// direito -> cicla o displayMode (alerts/worst/full).
 //
-// Redesenho em relação ao port original (que era um RowLayout horizontal, largo
-// demais para a barra lateral e clipado): agora usa os mesmos tokens/estrutura
-// dos itens nativos (StyledRect + radius full + Colours.tPalette.m3surfaceContainer
-// + StateLayer + ColumnLayout centralizado), com implicitWidth = innerWidth e
-// altura pelo conteúdo. Sem âncora de barra (sem arquivo kodexbar_anchor.json).
+// Redesenho em relação ao port original (RowLayout horizontal, largo demais para
+// a barra lateral e clipado) e ao primeiro redesign (que mostrava só 1 provedor):
+// usa os mesmos tokens/estrutura dos itens nativos (StyledRect + radius full +
+// Colours.tPalette.m3surfaceContainer + StateLayer + ColumnLayout), com
+// implicitWidth = innerWidth e altura dinâmica pelo número de provedores.
+// Sem âncora de barra (sem arquivo kodexbar_anchor.json).
 //
-// A lógica de seleção/percentual espelha o KodexBarWidget original; o visual foi
-// reescrito com os tokens do Caelestia. Uso (patch opcional do core):
+// A seleção/percentual espelha o KodexBarWidget original; o visual foi reescrito
+// com os tokens do Caelestia. Uso (patch opcional do core):
 //   DelegateChoice { roleValue: "kodexbar"; NoLimitsBarItem {} }
 
 import QtQuick
@@ -31,18 +33,15 @@ StyledRect {
     readonly property bool hasHandoffs: NoLimits.pendingHandoffs > 0
     readonly property bool serverDown: NoLimits.memoryEnabled && !NoLimits.serverUp
 
-    // Mesma escala dos ícones de status nativos (icon.medium ~24px) dentro dos
-    // ~40px internos da barra.
-    readonly property real iconSize: Math.round(Tokens.sizes.bar.innerWidth * 0.55)
+    // Mesma escala dos ícones de status nativos dentro dos ~40px internos da barra.
+    // Um pouco menor que o ícone único anterior porque agora há uma linha por
+    // provedor (mantém o item compacto na coluna).
+    readonly property real iconSize: Math.round(Tokens.sizes.bar.innerWidth * 0.5)
     readonly property real dotSize: Math.max(6, Math.round(iconSize * 0.3))
 
-    // Provedor exibido (pior percentual entre os habilitados) e sua apresentação.
-    // Propriedades derivadas evitam recalcular/duplicar a seleção nos bindings.
-    readonly property var displayProvider: worstProvider()
-    readonly property string displayIcon: displayProvider !== null ? providerIcon(displayProvider.provider) : ""
-    readonly property bool hasProviderIcon: displayProvider !== null && displayIcon !== ""
-    readonly property string displaySeverity: displayProvider !== null ? (displayProvider.error ? "critical" : displayProvider.severity) : worstSeverity()
-    readonly property color displayColour: severityColor(displaySeverity)
+    // Lista realmente renderizada: todos os habilitados, ou um placeholder único
+    // quando ainda não há dados (mantém o item estável durante loading/erro).
+    readonly property var barProviders: visibleProviders()
 
     function isDisabled(id) {
         return NoLimits.isDisabled(id);
@@ -57,19 +56,16 @@ StyledRect {
         return out;
     }
 
-    function shownProviders() {
+    // Provedores habilitados; se não houver nenhum, devolve um item-sentinela
+    // para exibir "…"/"ERR" sem quebrar o layout.
+    function visibleProviders() {
         let list = enabledProviders();
-        if (displayMode !== "alerts")
-            return list;
-        let alerts = [];
-        for (let i = 0; i < list.length; i++) {
-            let p = list[i];
-            if (p.error || p.severity === "warning" || p.severity === "critical")
-                alerts.push(p);
-        }
-        return alerts;
+        if (list.length === 0)
+            return [{ provider: "", percentages: null, severity: "ok", error: false, placeholder: true }];
+        return list;
     }
 
+    // Percentual da janela mais crítica do provedor (sessão x semanal).
     function worstPct(p) {
         let vals = [];
         if (p && p.percentages) {
@@ -88,27 +84,6 @@ StyledRect {
         return Math.round(worst);
     }
 
-    function severityRank(sev) {
-        if (sev === "critical")
-            return 2;
-        if (sev === "warning")
-            return 1;
-        return 0;
-    }
-
-    function worstSeverity() {
-        let list = enabledProviders();
-        let worst = "ok";
-        for (let i = 0; i < list.length; i++) {
-            let s = list[i].error ? "critical" : list[i].severity;
-            if (severityRank(s) > severityRank(worst))
-                worst = s;
-        }
-        if (displayMode === "alerts" && list.length === 0)
-            worst = "ok";
-        return worst;
-    }
-
     function severityColor(sev) {
         if (sev === "critical")
             return Colours.palette.m3error;
@@ -117,20 +92,14 @@ StyledRect {
         return Colours.palette.m3onSurfaceVariant;
     }
 
-    // Provedor de pior percentual entre os exibidos (define ícone e número).
-    function worstProvider() {
-        let list = shownProviders();
-        let best = null;
-        let bestPct = -1;
-        for (let i = 0; i < list.length; i++) {
-            let p = list[i];
-            let w = (p.error ? 100 : (worstPct(p) === null ? 0 : worstPct(p)));
-            if (w > bestPct) {
-                bestPct = w;
-                best = p;
-            }
-        }
-        return best;
+    function providerSeverity(p) {
+        if (!p || p.placeholder)
+            return "ok";
+        return p.error ? "critical" : p.severity;
+    }
+
+    function providerColour(p) {
+        return severityColor(providerSeverity(p));
     }
 
     function providerId(p) {
@@ -157,16 +126,13 @@ StyledRect {
         return "";
     }
 
-    // Texto enxuto para a largura estreita da barra: no modo "full" empilha as
-    // janelas de sessão/semana em duas linhas em vez de uma linha larga.
-    function barText() {
-        if (NoLimits.quotaLoading && providers.length === 0)
-            return "…";
-        if (NoLimits.quotaError && providers.length === 0)
-            return "ERR";
-        let p = displayProvider;
+    // Texto enxuto para a largura da barra. No modo "full" empilha sessão/semana
+    // em duas linhas; nos demais, só o percentual da janela mais crítica.
+    function providerText(p) {
         if (!p)
             return "";
+        if (p.placeholder)
+            return statusText();
         if (p.error)
             return "ERR";
         if (displayMode === "full") {
@@ -175,10 +141,11 @@ StyledRect {
                 parts.push("S " + Math.round(p.percentages.session) + "%");
             if (p.percentages && typeof p.percentages.weekly === "number")
                 parts.push("W " + Math.round(p.percentages.weekly) + "%");
-            return parts.join("\n");
+            if (parts.length > 0)
+                return parts.join("\n");
         }
         let w = worstPct(p);
-        return (w === null) ? "" : (w + "%");
+        return (w === null) ? "…" : (w + "%");
     }
 
     function cycleDisplayMode() {
@@ -213,15 +180,36 @@ StyledRect {
         id: content
 
         anchors.centerIn: parent
-        // Folga horizontal para o texto percentual não encostar nas bordas da
-        // cápsula; o label usa HorizontalFit para encolher só quando necessário.
+        // Folga horizontal para o texto não encostar nas bordas da cápsula; o
+        // label usa HorizontalFit para encolher só quando necessário.
         width: Tokens.sizes.bar.innerWidth - Tokens.padding.small
         spacing: Tokens.spacing.extraSmall
 
+        Repeater {
+            model: root.barProviders
+
+            delegate: ProviderRow {}
+        }
+    }
+
+    // Um provedor: ícone (logo do provedor ou fallback) sobre o percentual,
+    // colorido pela severidade daquele provedor.
+    component ProviderRow: ColumnLayout {
+        id: providerRow
+
+        required property var modelData
+        required property int index
+
+        readonly property string iconSource: root.providerIcon(providerRow.modelData ? providerRow.modelData.provider : "")
+
+        Layout.fillWidth: true
+        Layout.alignment: Qt.AlignHCenter
+        spacing: Tokens.spacing.extraSmall / 2
+
         Image {
             Layout.alignment: Qt.AlignHCenter
-            visible: root.hasProviderIcon
-            source: root.hasProviderIcon ? root.displayIcon : ""
+            visible: providerRow.iconSource !== ""
+            source: providerRow.iconSource
             sourceSize.width: root.iconSize
             sourceSize.height: root.iconSize
             Layout.preferredWidth: root.iconSize
@@ -232,22 +220,22 @@ StyledRect {
 
         MaterialIcon {
             Layout.alignment: Qt.AlignHCenter
-            visible: !root.hasProviderIcon
+            visible: providerRow.iconSource === ""
             text: "speed"
-            color: root.displayColour
-            fontStyle: Tokens.font.icon.medium
+            color: root.providerColour(providerRow.modelData)
+            fontStyle: Tokens.font.icon.small
         }
 
         StyledText {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignHCenter
-            visible: root.barText() !== ""
-            text: root.barText()
+            visible: text !== ""
+            text: root.providerText(providerRow.modelData)
             horizontalAlignment: Text.AlignHCenter
             fontSizeMode: Text.HorizontalFit
-            minimumPixelSize: 9
+            minimumPixelSize: 8
             font: Tokens.font.label.small
-            color: root.displayColour
+            color: root.providerColour(providerRow.modelData)
         }
     }
 
