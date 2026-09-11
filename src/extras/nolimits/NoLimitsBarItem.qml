@@ -125,6 +125,13 @@ StyledRect {
         return "";
     }
 
+    // SVGs de provedor (ex.: Codex) desenham o glifo preenchendo todo o viewBox,
+    // enquanto os PNGs (OpenCode Go/Cursor) trazem margem/tile próprio. Renderiza
+    // o SVG a ~82% para casar o PORTE VISUAL dos ícones dentro do mesmo contêiner.
+    function providerIconScale(id) {
+        return providerIcon(id).toLowerCase().endsWith(".svg") ? 0.82 : 1.0;
+    }
+
     function statusText() {
         if (NoLimits.quotaLoading && providers.length === 0)
             return "…";
@@ -209,6 +216,7 @@ StyledRect {
 
         readonly property string iconSource: root.providerIcon(providerRow.modelData ? providerRow.modelData.provider : "")
         readonly property bool hasIcon: providerRow.iconSource !== ""
+        readonly property real iconDrawSize: Math.round(root.iconSize * root.providerIconScale(providerRow.modelData ? providerRow.modelData.provider : ""))
 
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignHCenter
@@ -228,10 +236,10 @@ StyledRect {
                 anchors.centerIn: parent
                 visible: providerRow.hasIcon
                 source: providerRow.hasIcon ? providerRow.iconSource : ""
-                sourceSize.width: root.iconSize
-                sourceSize.height: root.iconSize
-                width: root.iconSize
-                height: root.iconSize
+                sourceSize.width: providerRow.iconDrawSize
+                sourceSize.height: providerRow.iconDrawSize
+                width: providerRow.iconDrawSize
+                height: providerRow.iconDrawSize
                 fillMode: Image.PreserveAspectFit
                 smooth: true
             }
