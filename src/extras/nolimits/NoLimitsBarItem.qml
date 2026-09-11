@@ -37,10 +37,10 @@ StyledRect {
     readonly property bool hasHandoffs: NoLimits.pendingHandoffs > 0
     readonly property bool serverDown: NoLimits.memoryEnabled && !NoLimits.serverUp
 
-    // Mesma escala dos ícones de status nativos dentro dos ~40px internos da barra.
-    // Um pouco menor que o ícone único anterior porque agora há uma linha por
-    // provedor (mantém o item compacto na coluna).
-    readonly property real iconSize: Math.round(Tokens.sizes.bar.innerWidth * 0.5)
+    // Escala dos ícones de status nativos dentro dos ~40px internos da barra.
+    // Cada provedor tem uma linha; o logo fica num contêiner comum (iconBox).
+    readonly property real iconSize: Math.round(Tokens.sizes.bar.innerWidth * 0.45)
+    readonly property real iconBox: Math.round(Tokens.sizes.bar.innerWidth * 0.6)
     readonly property real dotSize: Math.max(6, Math.round(iconSize * 0.3))
 
     // Lista realmente renderizada: todos os habilitados, ou um placeholder único
@@ -196,9 +196,9 @@ StyledRect {
         id: content
 
         anchors.centerIn: parent
-        // Folga horizontal para o texto não encostar nas bordas da cápsula; o
-        // label usa HorizontalFit para encolher só quando necessário.
-        width: Tokens.sizes.bar.innerWidth - Tokens.padding.small
+        // Folga horizontal para o texto percentual não encostar nas bordas da
+        // cápsula; o label também reduz a fonte (abaixo) e usa HorizontalFit.
+        width: Tokens.sizes.bar.innerWidth - Tokens.padding.medium
         spacing: Tokens.spacing.extraSmall
 
         Repeater {
@@ -217,29 +217,40 @@ StyledRect {
         required property int index
 
         readonly property string iconSource: root.providerIcon(providerRow.modelData ? providerRow.modelData.provider : "")
+        readonly property bool hasIcon: providerRow.iconSource !== ""
 
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignHCenter
         spacing: Tokens.spacing.extraSmall / 2
 
-        Image {
+        // Contêiner comum aos logos: Codex é SVG transparente e OpenCode/Cursor
+        // são PNGs com tile escuro; o fundo unifica a "família" em ~24px.
+        StyledRect {
             Layout.alignment: Qt.AlignHCenter
-            visible: providerRow.iconSource !== ""
-            source: providerRow.iconSource
-            sourceSize.width: root.iconSize
-            sourceSize.height: root.iconSize
-            Layout.preferredWidth: root.iconSize
-            Layout.preferredHeight: root.iconSize
-            fillMode: Image.PreserveAspectFit
-            smooth: true
-        }
+            implicitWidth: root.iconBox
+            implicitHeight: root.iconBox
+            radius: Tokens.rounding.small
+            color: Colours.tPalette.m3surfaceContainerHigh
 
-        MaterialIcon {
-            Layout.alignment: Qt.AlignHCenter
-            visible: providerRow.iconSource === ""
-            text: "speed"
-            color: root.providerColour(providerRow.modelData)
-            fontStyle: Tokens.font.icon.small
+            Image {
+                anchors.centerIn: parent
+                visible: providerRow.hasIcon
+                source: providerRow.hasIcon ? providerRow.iconSource : ""
+                sourceSize.width: root.iconSize
+                sourceSize.height: root.iconSize
+                width: root.iconSize
+                height: root.iconSize
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+            }
+
+            MaterialIcon {
+                anchors.centerIn: parent
+                visible: !providerRow.hasIcon
+                text: "speed"
+                color: root.providerColour(providerRow.modelData)
+                fontStyle: Tokens.font.icon.small
+            }
         }
 
         StyledText {
@@ -249,8 +260,8 @@ StyledRect {
             text: root.providerText(providerRow.modelData)
             horizontalAlignment: Text.AlignHCenter
             fontSizeMode: Text.HorizontalFit
-            minimumPixelSize: 8
-            font: Tokens.font.label.small
+            minimumPixelSize: 7
+            font: Tokens.font.label.builders.small.scale(0.85).build()
             color: root.providerColour(providerRow.modelData)
         }
     }

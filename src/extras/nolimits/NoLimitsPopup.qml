@@ -154,6 +154,29 @@ Item {
     readonly property int viewIndex: Math.max(0, viewIds.indexOf(activeView))
     property int pendingViewIndex: -1
 
+    // Altura natural do conteúdo da aba ativa. O host nativo (NoLimitsPopout +
+    // Content.qml) usa isto para dimensionar o blob ao conteúdo, em vez de
+    // sobrar fundo vazio embaixo. As Flickables expõem contentHeight; o
+    // StackLayout em si não contribui (implicitHeight 0).
+    readonly property real viewHeight: {
+        if (viewIndex === 1)
+            return memoryFlick.contentHeight;
+        if (viewIndex === 2)
+            return activityFlick.contentHeight;
+        if (viewIndex === 3)
+            return settingsFlick.contentHeight;
+        return flick.contentHeight;
+    }
+    readonly property real contentHeight: panelLayout.implicitHeight + viewHeight
+    implicitHeight: contentHeight
+
+    Behavior on implicitHeight {
+        NumberAnimation {
+            duration: 220
+            easing.type: Easing.OutCubic
+        }
+    }
+
     function switchView(id) {
         let idx = viewIds.indexOf(id);
         if (idx === -1) idx = 0;
@@ -234,6 +257,8 @@ Item {
             clip: true
 
             ColumnLayout {
+                id: panelLayout
+
                 anchors.fill: parent
                 // Sem margem própria: o Core (Content.qml) já recua o popout
                 // Tokens.padding.large das bordas do blob. Margem extra aqui
