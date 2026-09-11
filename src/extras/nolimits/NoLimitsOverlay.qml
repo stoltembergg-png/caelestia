@@ -4,11 +4,12 @@
 // lê NoLimits.visible e escuta NoLimits.showRequested. Sem âncora de barra e sem
 // IPC externo/script do Serpantinum.
 //
-// Decisões de layout (adaptação do popup 400x480 top-right do Serpantinum):
-//  - largura = Tokens.sizes.utilities.width (default 430), altura = 520;
-//  - ancorado no canto superior direito "perto da barra": topMargin =
-//    Tokens.sizes.bar.innerWidth + Tokens.padding.medium (~52, equivalente ao
-//    mt:52 do WindowRegistry original), rightMargin = Tokens.padding.extraSmall;
+// Decisões de layout (adaptação do popup 400x480 top-right do Serpantinum para a
+// barra VERTICAL À ESQUERDA):
+//  - o popup abre AO LADO da barra esquerda: leftMargin = largura interna da barra
+//    + folga grande (Tokens.sizes.bar.innerWidth + Tokens.padding.large * 2), com o
+//    topo perto do topo da barra (Tokens.padding.large);
+//  - largura = Tokens.sizes.utilities.width (default 430), altura limitada a 520;
 //  - backdrop transparente full-screen fecha ao clique; Esc também fecha;
 //  - só a tela focada interage (Hypr.focusedMonitor.name === screen.name).
 
@@ -56,10 +57,10 @@ Scope {
 
                 visible: NoLimits.visible && win.focused
 
-                // Topo do painel: espelha o antigo offset de 52px do popup do
-                // Serpantinum (barra ~40 + folga média).
-                readonly property real panelTop: Tokens.sizes.bar.innerWidth + Tokens.padding.medium
-                readonly property real panelRight: Tokens.padding.extraSmall
+                // Ao lado da barra esquerda: barra ~40px interna + folga generosa.
+                readonly property real panelLeft: Tokens.sizes.bar.innerWidth + Tokens.padding.large * 2
+                // Topo do painel alinhado ao primeiro item da barra.
+                readonly property real panelTop: Tokens.padding.large
 
                 // Backdrop transparente: clique fora do painel fecha o overlay.
                 MouseArea {
@@ -72,11 +73,11 @@ Scope {
                     id: panel
 
                     anchors.top: parent.top
-                    anchors.right: parent.right
+                    anchors.left: parent.left
                     anchors.topMargin: win.panelTop
-                    anchors.rightMargin: win.panelRight
+                    anchors.leftMargin: win.panelLeft
 
-                    width: Math.min(Tokens.sizes.utilities.width, win.width - Tokens.padding.medium * 2)
+                    width: Math.min(Tokens.sizes.utilities.width, win.width - win.panelLeft - Tokens.padding.medium)
                     height: Math.min(520, win.height - win.panelTop - Tokens.padding.medium)
 
                     // Engole cliques que não foram tratados pelo conteúdo do popup

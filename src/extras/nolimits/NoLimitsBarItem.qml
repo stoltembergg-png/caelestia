@@ -1,8 +1,14 @@
 // Portado de Serpantinum: src/quickshell/bar/modules/KodexBarWidget.qml (AGPL-3.0)
-// Cápsula compacta para a barra do Caelestia: ícone + %/severidade + badge de
-// handoffs + ponto offline. Clique esquerdo -> NoLimits.toggle(); clique direito
-// -> cicla o displayMode (alerts/worst/full). Visual nativo (Colours/Tokens/
-// StateLayer), sem âncora de barra (sem arquivo kodexbar_anchor.json).
+// Cápsula VERTICAL para a barra esquerda do Caelestia (~40px de largura):
+// ícone do provedor de pior severidade + percentual, com badge de handoffs e
+// ponto de offline discretos nos cantos. Clique esquerdo -> NoLimits.toggle();
+// clique direito -> cicla o displayMode (alerts/worst/full).
+//
+// Redesenho em relação ao port original (que era um RowLayout horizontal, largo
+// demais para a barra lateral e clipado): agora usa os mesmos tokens/estrutura
+// dos itens nativos (StyledRect + radius full + Colours.tPalette.m3surfaceContainer
+// + StateLayer + ColumnLayout centralizado), com implicitWidth = innerWidth e
+// altura pelo conteúdo. Sem âncora de barra (sem arquivo kodexbar_anchor.json).
 //
 // A lógica de seleção/percentual espelha o KodexBarWidget original; o visual foi
 // reescrito com os tokens do Caelestia. Uso (patch opcional do core):
@@ -16,7 +22,7 @@ import qs.components
 import qs.services
 import qs.extras
 
-Item {
+StyledRect {
     id: root
 
     readonly property var providers: NoLimits.providers
@@ -25,7 +31,18 @@ Item {
     readonly property bool hasHandoffs: NoLimits.pendingHandoffs > 0
     readonly property bool serverDown: NoLimits.memoryEnabled && !NoLimits.serverUp
 
-    readonly property real iconSize: Math.round(Tokens.sizes.bar.innerWidth * 0.42)
+    // Mesma escala dos ícones de status nativos (icon.medium ~24px) dentro dos
+    // ~40px internos da barra.
+    readonly property real iconSize: Math.round(Tokens.sizes.bar.innerWidth * 0.55)
+    readonly property real dotSize: Math.max(6, Math.round(iconSize * 0.3))
+
+    // Provedor exibido (pior percentual entre os habilitados) e sua apresentação.
+    // Propriedades derivadas evitam recalcular/duplicar a seleção nos bindings.
+    readonly property var displayProvider: worstProvider()
+    readonly property string displayIcon: displayProvider !== null ? providerIcon(displayProvider.provider) : ""
+    readonly property bool hasProviderIcon: displayProvider !== null && displayIcon !== ""
+    readonly property string displaySeverity: displayProvider !== null ? (displayProvider.error ? "critical" : displayProvider.severity) : worstSeverity()
+    readonly property color displayColour: severityColor(displaySeverity)
 
     function isDisabled(id) {
         return NoLimits.isDisabled(id);
@@ -100,7 +117,7 @@ Item {
         return Colours.palette.m3onSurfaceVariant;
     }
 
-    // Provider de pior percentual entre os exibidos (define ícone e número).
+    // Provedor de pior percentual entre os exibidos (define ícone e número).
     function worstProvider() {
         let list = shownProviders();
         let best = null;
@@ -140,19 +157,25 @@ Item {
         return "";
     }
 
-    function pctText() {
-        let p = worstProvider();
+    // Texto enxuto para a largura estreita da barra: no modo "full" empilha as
+    // janelas de sessão/semana em duas linhas em vez de uma linha larga.
+    function barText() {
+        if (NoLimits.quotaLoading && providers.length === 0)
+            return "…";
+        if (NoLimits.quotaError && providers.length === 0)
+            return "ERR";
+        let p = displayProvider;
         if (!p)
-            return statusText();
+            return "";
         if (p.error)
             return "ERR";
         if (displayMode === "full") {
             let parts = [];
-            if (p.percentages && p.percentages.session !== null && p.percentages.session !== undefined)
+            if (p.percentages && typeof p.percentages.session === "number")
                 parts.push("S " + Math.round(p.percentages.session) + "%");
-            if (p.percentages && p.percentages.weekly !== null && p.percentages.weekly !== undefined)
+            if (p.percentages && typeof p.percentages.weekly === "number")
                 parts.push("W " + Math.round(p.percentages.weekly) + "%");
-            return parts.join(" ");
+            return parts.join("\n");
         }
         let w = worstPct(p);
         return (w === null) ? "" : (w + "%");
@@ -164,13 +187,13 @@ Item {
         NoLimits.setDisplayMode(order[(idx + 1) % order.length]);
     }
 
-    implicitWidth: row.implicitWidth + Tokens.padding.large
-    implicitHeight: Tokens.sizes.bar.innerWidth
+    implicitWidth: Tokens.sizes.bar.innerWidth
+    implicitHeight: content.implicitHeight + Tokens.padding.small * 2
+    radius: Tokens.rounding.full
+    color: Colours.tPalette.m3surfaceContainer
 
-    StyledRect {
-        anchors.fill: parent
-        radius: Tokens.rounding.full
-        color: Colours.tPalette.m3surfaceContainer
+    Behavior on implicitHeight {
+        Anim {}
     }
 
     StateLayer {
@@ -186,16 +209,16 @@ Item {
         }
     }
 
-    RowLayout {
-        id: row
+    ColumnLayout {
+        id: content
 
         anchors.centerIn: parent
-        spacing: Tokens.spacing.small
+        spacing: Tokens.spacing.extraSmall
 
         Image {
-            Layout.alignment: Qt.AlignVCenter
-            visible: root.worstProvider() !== null && root.providerIcon(root.worstProvider().provider) !== ""
-            source: root.worstProvider() !== null ? root.providerIcon(root.worstProvider().provider) : ""
+            Layout.alignment: Qt.AlignHCenter
+            visible: root.hasProviderIcon
+            source: root.hasProviderIcon ? root.displayIcon : ""
             sourceSize.width: root.iconSize
             sourceSize.height: root.iconSize
             Layout.preferredWidth: root.iconSize
@@ -205,55 +228,57 @@ Item {
         }
 
         MaterialIcon {
-            Layout.alignment: Qt.AlignVCenter
-            visible: !(root.worstProvider() !== null && root.providerIcon(root.worstProvider().provider) !== "")
+            Layout.alignment: Qt.AlignHCenter
+            visible: !root.hasProviderIcon
             text: "speed"
-            color: root.severityColor(root.worstSeverity())
+            color: root.displayColour
+            fontStyle: Tokens.font.icon.medium
         }
 
-        StyledRect {
-            Layout.alignment: Qt.AlignVCenter
-            visible: root.pctText() !== ""
-            implicitWidth: pctLabel.implicitWidth + Tokens.padding.small
-            implicitHeight: pctLabel.implicitHeight + Tokens.padding.extraSmall
-            radius: height / 2
-            color: Qt.alpha(root.severityColor(root.worstSeverity()), 0.16)
-
-            StyledText {
-                id: pctLabel
-
-                anchors.centerIn: parent
-                text: root.pctText()
-                font: Tokens.font.label.small
-                color: root.severityColor(root.worstSeverity())
-            }
+        StyledText {
+            Layout.alignment: Qt.AlignHCenter
+            visible: root.barText() !== ""
+            text: root.barText()
+            horizontalAlignment: Text.AlignHCenter
+            font: Tokens.font.label.small
+            color: root.displayColour
         }
+    }
 
-        StyledRect {
-            Layout.alignment: Qt.AlignVCenter
-            visible: root.hasHandoffs
-            implicitWidth: handoffLabel.implicitWidth + Tokens.padding.small
-            implicitHeight: handoffLabel.implicitHeight + Tokens.padding.extraSmall
-            radius: height / 2
-            color: Qt.alpha(Colours.palette.m3tertiary, 0.22)
+    // Badge discreto de handoffs pendentes (canto superior direito).
+    StyledRect {
+        id: handoffBadge
 
-            StyledText {
-                id: handoffLabel
+        visible: root.hasHandoffs
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: Tokens.padding.extraSmall / 2
+        anchors.rightMargin: Tokens.padding.extraSmall / 2
+        implicitWidth: Math.max(handoffText.implicitHeight + Tokens.padding.extraSmall, handoffText.implicitWidth + Tokens.padding.extraSmall / 2)
+        implicitHeight: handoffText.implicitHeight + Tokens.padding.extraSmall / 2
+        radius: height / 2
+        color: Colours.palette.m3tertiary
 
-                anchors.centerIn: parent
-                text: "" + NoLimits.pendingHandoffs
-                font: Tokens.font.label.small
-                color: Colours.palette.m3tertiary
-            }
+        StyledText {
+            id: handoffText
+
+            anchors.centerIn: parent
+            text: "" + NoLimits.pendingHandoffs
+            font: Tokens.font.label.builders.small.scale(0.72).build()
+            color: Colours.palette.m3onTertiary
         }
+    }
 
-        StyledRect {
-            Layout.alignment: Qt.AlignVCenter
-            visible: root.serverDown
-            implicitWidth: Math.round(root.iconSize * 0.42)
-            implicitHeight: implicitWidth
-            radius: width / 2
-            color: Colours.palette.m3error
-        }
+    // Ponto discreto de servidor de memória offline (canto inferior direito).
+    StyledRect {
+        visible: root.serverDown
+        anchors.bottom: parent.bottom
+        anchors.right: parent.right
+        anchors.bottomMargin: Tokens.padding.extraSmall
+        anchors.rightMargin: Tokens.padding.extraSmall
+        implicitWidth: root.dotSize
+        implicitHeight: root.dotSize
+        radius: width / 2
+        color: Colours.palette.m3error
     }
 }
