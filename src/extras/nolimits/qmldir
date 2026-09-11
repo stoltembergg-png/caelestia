@@ -2,3 +2,4 @@ module qs.extras.nolimits
 NoLimitsOverlay 1.0 NoLimitsOverlay.qml
 NoLimitsPopup 1.0 NoLimitsPopup.qml
 NoLimitsBarItem 1.0 NoLimitsBarItem.qml
+NoLimitsPopout 1.0 NoLimitsPopout.qml

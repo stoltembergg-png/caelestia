@@ -1,19 +1,20 @@
 // Portado de Serpantinum: src/quickshell/kodexbar/KodexBarPopup.qml (AGPL-3.0)
 // Port 1:1 da UI (4 abas: Limits/Memory/Activity/Settings). Adaptações de port:
 //  - imports relativos do Serpantinum -> shims qs.extras / qs.extras.reusables;
-//  - sem dependência da janela da barra/IPC: o host (NoLimitsOverlay) controla a
-//    visibilidade e lê NoLimits.visible / NoLimits.showRequested;
-//  - o painel usa a superfície opaca do core (Colours.palette.m3surfaceContainer)
-//    em vez de ThemeBackend.base (tPalette, ~85% de opacidade): como este
-//    StyledWindow não recebe blur do compositor, a transparência deixava o texto
-//    da janela atrás vazar ("ghosting") por trás do header/abas.
+//  - sem dependência da janela da barra/IPC: o host (NoLimitsOverlay ou o popout
+//    nativo da barra) controla a visibilidade e lê NoLimits.visible /
+//    NoLimits.showRequested;
+//  - integração NATIVA (modules/bar/popouts): o fundo "blob" é desenhado por fora
+//    (ContentWindow.popoutBg) e o Content.qml aplica Tokens.padding.large nas
+//    bordas. Por isso o frame próprio agora é transparente e o conteúdo não tem
+//    margem extra — o padding de fora é o do core. O overlay legado
+//    (NoLimitsOverlay) continua sobrescrevendo o tamanho via anchors.fill.
 
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import qs.extras
 import qs.extras.reusables
-import qs.services
 
 Item {
     id: window
@@ -226,13 +227,18 @@ Item {
             id: frame
             anchors.fill: parent
             radius: ThemeBackend.borderRadius
-            color: Colours.palette.m3surfaceContainer
+            // Transparente: o fundo é o blob nativo do popout da barra
+            // (ContentWindow.popoutBg). Mantém o clip retangular do conteúdo.
+            color: "transparent"
             border.width: 0
             clip: true
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: window.s(16)
+                // Sem margem própria: o Core (Content.qml) já recua o popout
+                // Tokens.padding.large das bordas do blob. Margem extra aqui
+                // duplicaria o recuo e afastaria do padrão nativo.
+                anchors.margins: 0
                 spacing: window.s(12)
 
                 RowLayout {

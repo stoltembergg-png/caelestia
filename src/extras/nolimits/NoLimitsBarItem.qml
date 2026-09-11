@@ -27,6 +27,10 @@ import qs.extras
 StyledRect {
     id: root
 
+    // Injetado pela barra (DelegateChoice) para acessar o serviço NATIVO de
+    // popouts (`bar.popouts`). Sem ele, cai no fallback do singleton.
+    property var bar
+
     readonly property var providers: NoLimits.providers
     readonly property string displayMode: NoLimits.displayMode
 
@@ -169,10 +173,22 @@ StyledRect {
         acceptedButtons: Qt.LeftButton | Qt.RightButton
 
         onClicked: mouse => {
-            if (mouse.button === Qt.RightButton)
+            if (mouse.button === Qt.RightButton) {
                 root.cycleDisplayMode();
-            else
+                return;
+            }
+            const p = root.bar ? root.bar.popouts : null;
+            if (!p) {
                 NoLimits.toggle();
+                return;
+            }
+            if (p.hasCurrent && p.currentName === "nolimits")
+                p.hasCurrent = false;
+            else {
+                p.currentName = "nolimits";
+                p.currentCenter = Qt.binding(() => root.mapToItem(root.bar, 0, root.implicitHeight / 2).y);
+                p.hasCurrent = true;
+            }
         }
     }
 

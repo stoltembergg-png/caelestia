@@ -20,8 +20,6 @@ Item {
 
     Dock {}
 
-    NoLimitsOverlay {}
-
     WhatsAppOverlay {
         id: whatsappOverlay
     }
