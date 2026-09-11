@@ -110,3 +110,4 @@ Bind Hyprland (Lua): `hl.dsp.global("caelestia:extras")`.
 2. Em `shell.qml`: `Loader { source: "extras/Extras.qml"; asynchronous: true }` (ou `import "extras"`).
 3. De qualquer arquivo: `import qs.extras`.
 4. `extras/qmldir` próprio para singletons (`singleton Nome 1.0 caminho.qml`).
+5. **Subpastas importadas por URI (`qs.extras.<sub>`) precisam de `qmldir` próprio** (`module qs.extras.<sub>` + entradas) — o scanner do Quickshell não segue `Loader.source`, e sem qmldir o import falha. Singletons ficam no `extras/qmldir` da raiz. Confirmado no review ora-1.

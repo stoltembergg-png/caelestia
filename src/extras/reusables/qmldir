@@ -1,0 +1,5 @@
+module qs.extras.reusables
+IconButton 1.0 IconButton.qml
+ClickButton 1.0 ClickButton.qml
+DeleteButton 1.0 DeleteButton.qml
+Input 1.0 Input.qml

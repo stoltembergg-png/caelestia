@@ -116,5 +116,17 @@ Item {
         }
     }
 
+    Connections {
+        target: Config
+
+        function onSettingsLoaded(): void {
+            root.applyLanguage();
+        }
+
+        function onDataReadyChanged(): void {
+            root.applyLanguage();
+        }
+    }
+
     Component.onCompleted: root.applyLanguage()
 }

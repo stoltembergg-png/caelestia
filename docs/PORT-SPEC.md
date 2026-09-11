@@ -13,15 +13,19 @@ src/extras/
   compat/                     # [A] singletons de adaptação
     ThemeBackend.qml Scaler.qml Config.qml Caching.qml I18n.qml
     Sounds.qml SysData.qml OsdController.qml FloatingController.qml NotesManager.qml
-  reusables/                  # [A] só os usados: IconButton.qml ClickButton.qml DeleteButton.qml Input.qml
+  reusables/                  # [A] só os usados
+    qmldir IconButton.qml ClickButton.qml DeleteButton.qml Input.qml
   assets/languages/en.json pt.json   # [A] chaves quickactions.* e dock.* do Serpantinum
   quickactions/               # [B]
-    QuickActions.qml          # host (port de quickactions/Floating.qml)
-    Notepad.qml NotesList.qml DrawAction.qml
-  dock/Dock.qml               # [C] port de dock/Dock.qml
+    qmldir QuickActions.qml Notepad.qml NotesList.qml DrawAction.qml
+  dock/qmldir Dock.qml        # [C]
   scripts/notepad/md_render.py    # [B]
   scripts/minimize.sh             # [C]
 ```
+
+> **Subpastas exigem `qmldir` próprio** (`module qs.extras.<sub>` + entradas): o scanner do Quickshell
+> não segue `Loader.source`; sem qmldir, `import qs.extras.reusables`/relativos falham. O `extras/qmldir`
+> da raiz cobre apenas os singletons. (Confirmado no review ora-1.)
 
 `qmldir` (conteúdo exato):
 ```

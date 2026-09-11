@@ -70,7 +70,7 @@ rm -rf "$CAELESTIA_DIR/extras"
 2. `caelestia shell -s` deve listar o target IPC `extras`.
 3. Atalho `caelestia:quickactions` abre o overlay; a aba **Notas** cria/edita/salva e persiste em `~/.local/state/caelestia/notepad/notes.json`.
 4. A aba **Lousa** desenha (caneta/borracha), undo/redo, zoom/pan, salva PNG em `~/Pictures` e copia via `wl-copy`.
-5. O **Dock** aparece, faz autohide, magnifica no hover, reordena por drag e fixa apps pelo picker.
+5. O **Dock** faz autohide, magnifica no hover, reordena por drag e fixa apps pelo picker. Na primeira execução ele começa vazio e invisível (igual ao Serpantinum): defina `"editing": true` (ou adicione apps) em `~/.config/caelestia/extras.json → dock` para exibi-lo e cadastrar apps.
 6. Sem erros de QML no log: `journalctl --user -u caelestia-shell -f` (ou o log do `qs`).
 
 Se algo falhar, os pontos mais prováveis são: tema (`Colours`/`Tokens`) no shim `ThemeBackend`; `StyledWindow`/`WlrLayershell` no host; e caminhos em `Caching`.

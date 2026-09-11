@@ -113,7 +113,7 @@ Item {
         onDataChanged: {
             if (data) {
                 try {
-                    let parsed = JSON.parse(data);
+                    let parsed = JSON.parse(data());
                     if (parsed && parsed.length > 0) {
                         root.colorPalettes = parsed;
                     }
@@ -126,8 +126,7 @@ Item {
         id: paletteSaveTimer
         interval: 500
         onTriggered: {
-            let jsonStr = JSON.stringify(root.colorPalettes);
-            Quickshell.exec(["sh", "-c", "echo '" + jsonStr + "' > " + palettesFile.path]);
+            palettesFile.setText(JSON.stringify(root.colorPalettes, null, 2));
         }
     }
 

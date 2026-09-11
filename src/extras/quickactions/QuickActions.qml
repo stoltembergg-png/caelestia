@@ -206,11 +206,10 @@ Variants {
             }
 
             function isTargetScreen() {
-                let target = null;
-                if (typeof Quickshell !== "undefined" && Quickshell.cursorScreen !== undefined)
-                    target = Quickshell.cursorScreen;
-                if (!target) target = floatingWidget.screen;
-                return floatingWidget.matchesScreen(target);
+                const mon = Hypr.focusedMonitor;
+                if (mon && floatingWidget.screen)
+                    return mon.name === floatingWidget.screen.name;
+                return true;
             }
 
             function tabIndexFor(tab) {

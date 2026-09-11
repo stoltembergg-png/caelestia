@@ -1,0 +1,5 @@
+module qs.extras.quickactions
+QuickActions 1.0 QuickActions.qml
+Notepad 1.0 Notepad.qml
+NotesList 1.0 NotesList.qml
+DrawAction 1.0 DrawAction.qml
