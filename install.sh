@@ -109,6 +109,10 @@ Pronto. Passos finais:
 - Config: ~/.config/caelestia/extras.json (criado com defaults na 1ª execução)
 - Docs: docs/INTEGRATION.md (smoke test) e docs/SWITCH-PLAN.md (troca do Serpantinum)
 
+Importante (1º boot): depois de rodar o Caelestia uma vez, reaplique:
+  python3 scripts/patch-caelestia-bar.py "$CAELESTIA_DIR"   # shell.json só existe após o 1º boot
+  bash scripts/migrate-serpantinum.sh                        # extras.json idem
+
 Notas:
 - O WhatsApp exige o Quickshell patchado (WebView). O wrapper ~/.local/bin/qs deve vir
   antes de /usr/bin no PATH, e o build precisa existir (scripts/build-quickshell-webview.sh).

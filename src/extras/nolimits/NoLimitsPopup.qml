@@ -424,7 +424,7 @@ Item {
 
                                             Image {
                                                 anchors.centerIn: parent
-                                                visible: source != ""
+                                                visible: source !== ""
                                                 source: window.providerIcon(card.entry.provider)
                                                 sourceSize.width: window.s(17)
                                                 sourceSize.height: window.s(17)
@@ -1069,7 +1069,7 @@ Item {
 
                                         Image {
                                             Layout.alignment: Qt.AlignVCenter
-                                            visible: source != ""
+                                            visible: source !== ""
                                             source: window.providerIcon(modelData.provider)
                                             sourceSize.width: window.s(16)
                                             sourceSize.height: window.s(16)

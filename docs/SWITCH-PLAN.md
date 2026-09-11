@@ -37,6 +37,9 @@ mkdir -p ~/.config/quickshell
 cp -a ~/.config/hypr_backup/backup_20260909_192643_pre_serpantinum/quickshell_snapshot/caelestia \
       ~/.config/quickshell/caelestia
 cd ~/caelestia-extras && ./install.sh ~/.config/quickshell/caelestia   # (após atualização do install.sh)
+# Após o 1º boot do Caelestia (cria shell.json/extras.json), reaplique:
+#   python3 scripts/patch-caelestia-bar.py ~/.config/quickshell/caelestia
+#   bash scripts/migrate-serpantinum.sh
 ```
 
 ## Fase 2 — Testar na sessão atual

@@ -1,9 +1,11 @@
 // Portado de Serpantinum: src/quickshell/whatsapp/WhatsAppPopup.qml (AGPL-3.0)
 // Host novo (não existe equivalente no Serpantinum): StyledWindow por tela,
 // 940x500 top-center, backdrop que fecha, Esc fecha e só a tela focada interage.
+// O WebEngineProfile é ÚNICO no processo (storageName não pode se repetir por tela).
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
+import QtWebEngine
 import qs.services
 import qs.components.containers
 import qs.extras
@@ -23,6 +25,15 @@ Scope {
 
     function hide(): void {
         root.visible = false;
+    }
+
+    WebEngineProfile {
+        id: waProfile
+
+        storageName: "serpantinum-whatsapp-v2"
+        offTheRecord: false
+        httpUserAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        persistentCookiesPolicy: WebEngineProfile.ForcePersistentCookies
     }
 
     Variants {
@@ -65,6 +76,7 @@ Scope {
             WhatsAppPanel {
                 id: panel
 
+                profile: waProfile
                 width: Math.min(win.width - win.s(32), win.s(940))
                 height: win.s(500)
                 x: (win.width - width) / 2

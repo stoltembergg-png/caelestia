@@ -13,7 +13,6 @@
 //  - só a tela focada interage (Hypr.focusedMonitor.name === screen.name).
 
 import QtQuick
-import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
 import Caelestia.Config

@@ -13,7 +13,7 @@ import Quickshell.Io
 import qs.extras
 import qs.services
 
-Item {
+Singleton {
     id: root
 
     // ---------- configuração (seção noLimits, com fallback legado) ----------
@@ -972,6 +972,7 @@ Item {
         id: actionMonitor
         command: ["gdbus", "monitor", "--session", "--dest", "org.freedesktop.Notifications"]
         running: true
+        onExited: actionMonitor.running = true
         stdout: SplitParser {
             onRead: function(line) {
                 let m = line.match(/ActionInvoked\s*\(uint32\s+(\d+),\s*'([^']*)'\)/);

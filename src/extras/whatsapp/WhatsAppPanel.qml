@@ -14,9 +14,8 @@ Item {
     id: window
     focus: true
 
-    // Controlado pelo host (WhatsAppOverlay). Mantém o WebEngine vivo após a
-    // 1ª abertura para preservar o estado da sessão.
-    property bool visible: false
+    // Perfil WebEngine compartilhado, injetado pelo host (WhatsAppOverlay).
+    required property WebEngineProfile profile
 
     // LAZY load: nada de WebEngine enquanto o painel nunca foi aberto.
     property bool _everOpened: false
@@ -171,14 +170,6 @@ Item {
         webLoader.item.runJavaScript(js);
     }
 
-    WebEngineProfile {
-        id: waProfile
-        storageName: "serpantinum-whatsapp-v2"
-        offTheRecord: false
-        httpUserAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        persistentCookiesPolicy: WebEngineProfile.ForcePersistentCookies
-    }
-
     Component.onCompleted: {
         if (visible) {
             window._everOpened = true;
@@ -221,7 +212,7 @@ Item {
                         focus: true
                         url: "https://web.whatsapp.com"
                         backgroundColor: ThemeBackend.base
-                        profile: waProfile
+                        profile: window.profile
                         settings.forceDarkMode: true
 
                         onLoadingChanged: function(loadRequest) {
@@ -235,7 +226,6 @@ Item {
                         onNewWindowRequested: function(request) {
                             if (request.destination === WebEngineNewWindowRequest.InNewWindow) {
                                 Quickshell.execDetached(["xdg-open", request.requestedUrl]);
-                                request.reject();
                             } else {
                                 request.openIn(web);
                             }
@@ -243,7 +233,7 @@ Item {
 
                         onPermissionRequested: function(permission) {
                             let origin = permission.origin ? permission.origin.toString() : "";
-                            if (permission.permissionType === WebEnginePermission.MediaAudioCapture && origin.indexOf("whatsapp") !== -1) {
+                            if (permission.permissionType === WebEnginePermission.PermissionType.MediaAudioCapture && origin.indexOf("whatsapp") !== -1) {
                                 permission.grant();
                             } else {
                                 permission.deny();
