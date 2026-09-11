@@ -2,8 +2,9 @@
 // Cápsula VERTICAL para a barra esquerda do Caelestia (~40px de largura):
 // lista TODOS os provedores habilitados, cada um com seu ícone e o percentual da
 // janela mais crítica ("worstPct"), empilhados. Badge de handoffs e ponto de
-// offline discretos nos cantos. Clique esquerdo -> NoLimits.toggle(); clique
-// direito -> cicla o displayMode (alerts/worst/full).
+// offline discretos nos cantos. O popout abre por HOVER (Bar.checkPopout, mesmo
+// padrão de tray/statusIcons); clique direito -> cicla o displayMode
+// (alerts/worst/full). Clique esquerdo não alterna mais (evita conflito com o hover).
 //
 // Redesenho em relação ao port original (RowLayout horizontal, largo demais para
 // a barra lateral e clipado) e ao primeiro redesign (que mostrava só 1 provedor):
@@ -27,8 +28,9 @@ import qs.extras
 StyledRect {
     id: root
 
-    // Injetado pela barra (DelegateChoice) para acessar o serviço NATIVO de
-    // popouts (`bar.popouts`). Sem ele, cai no fallback do singleton.
+    // Injetado pela barra (DelegateChoice, patch do core). O popout nativo agora é
+    // aberto por hover via Bar.checkPopout(); este binding permanece para casar com
+    // o `bar: root` emitido pelo patch e para uso futuro do item.
     property var bar
 
     readonly property var providers: NoLimits.providers
@@ -37,10 +39,11 @@ StyledRect {
     readonly property bool hasHandoffs: NoLimits.pendingHandoffs > 0
     readonly property bool serverDown: NoLimits.memoryEnabled && !NoLimits.serverUp
 
-    // Escala dos ícones de status nativos dentro dos ~40px internos da barra.
-    // Cada provedor tem uma linha; o logo fica num contêiner comum (iconBox).
-    readonly property real iconSize: Math.round(Tokens.sizes.bar.innerWidth * 0.45)
-    readonly property real iconBox: Math.round(Tokens.sizes.bar.innerWidth * 0.6)
+    // Porte alinhado aos ícones de status nativos: Power/StatusIcons usam
+    // Tokens.font.icon.small (~20px de caixa, glifo ~15px). Cada provedor tem
+    // uma linha; o logo fica num contêiner discreto comum (iconBox).
+    readonly property real iconSize: Math.round(Tokens.sizes.bar.innerWidth * 0.375)
+    readonly property real iconBox: Math.round(Tokens.sizes.bar.innerWidth * 0.5)
     readonly property real dotSize: Math.max(6, Math.round(iconSize * 0.3))
 
     // Lista realmente renderizada: todos os habilitados, ou um placeholder único
@@ -173,22 +176,10 @@ StyledRect {
         acceptedButtons: Qt.LeftButton | Qt.RightButton
 
         onClicked: mouse => {
-            if (mouse.button === Qt.RightButton) {
+            // O hover abre/fecha o popout nativo (Bar.checkPopout); o clique
+            // esquerdo não alterna mais para não conflitar com o hover.
+            if (mouse.button === Qt.RightButton)
                 root.cycleDisplayMode();
-                return;
-            }
-            const p = root.bar ? root.bar.popouts : null;
-            if (!p) {
-                NoLimits.toggle();
-                return;
-            }
-            if (p.hasCurrent && p.currentName === "nolimits")
-                p.hasCurrent = false;
-            else {
-                p.currentName = "nolimits";
-                p.currentCenter = Qt.binding(() => root.mapToItem(root.bar, 0, root.implicitHeight / 2).y);
-                p.hasCurrent = true;
-            }
         }
     }
 
@@ -224,12 +215,13 @@ StyledRect {
         spacing: Tokens.spacing.extraSmall / 2
 
         // Contêiner comum aos logos: Codex é SVG transparente e OpenCode/Cursor
-        // são PNGs com tile escuro; o fundo unifica a "família" em ~24px.
+        // são PNGs com tile escuro; o fundo unifica a "família". Mantido discreto
+        // (raio pequeno) para o item não pesar mais que os vizinhos nativos.
         StyledRect {
             Layout.alignment: Qt.AlignHCenter
             implicitWidth: root.iconBox
             implicitHeight: root.iconBox
-            radius: Tokens.rounding.small
+            radius: Tokens.rounding.extraSmall
             color: Colours.tPalette.m3surfaceContainerHigh
 
             Image {

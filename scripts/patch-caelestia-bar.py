@@ -7,7 +7,9 @@
     * um DelegateChoice roleValue "kodexbar" que instancia NoLimitsBarItem com
       `bar: root` (permite ao item abrir o popout nativo);
     * um bloco `openNoLimits()` + `Connections` que reagem a `Extras.NoLimits.showRequested`
-      e abrem o popout nativo "nolimits".
+      e abrem o popout nativo "nolimits";
+    * um ramo `else if (id === "kodexbar")` no `checkPopout` que abre o popout ao
+      passar o mouse (mesmo padrão de tray/statusIcons).
 - modules/bar/popouts/Content.qml:
     * `import qs.extras.nolimits` + um Popout "nolimits" hospedando NoLimitsPopout.
 - modules/bar/popouts/Wrapper.qml:
@@ -35,6 +37,10 @@ MARK_BEGIN = "// >>> caelestia-extras bar"
 MARK_END = "// <<< caelestia-extras bar"
 NL_BEGIN = "// >>> caelestia-extras nolimits"
 NL_END = "// <<< caelestia-extras nolimits"
+# Marcador distinto do NL_BEGIN para não haver colisão de substring (idempotência
+# do ramo de hover independente do bloco openNoLimits/showRequested).
+NL_HOVER_BEGIN = "// >>> caelestia-extras hover-nolimits"
+NL_HOVER_END = "// <<< caelestia-extras hover-nolimits"
 IMPORT_NL = "import qs.extras.nolimits"
 IMPORT_EXTRAS = "import qs.extras as Extras"
 
@@ -91,6 +97,26 @@ CONTENT_INSERT = f"""        {NL_BEGIN}
 WRAPPER_OLD_WHEN = 'when: root.isDetached || (root.hasCurrent && root.currentName === "wirelesspassword")'
 WRAPPER_NEW_WHEN = ('when: root.isDetached || (root.hasCurrent && (root.currentName === "wirelesspassword" '
                     '|| root.currentName === "nolimits"))')
+
+# Ramo de hover inserido no fim do if/else de checkPopout (mesmo padrão de
+# tray/statusIcons): ao passar o mouse no item "kodexbar", abre o popout
+# "nolimits" ancorado ao centro do item.
+HOVER_OLD = """            popouts.currentCenter = (ch.item as Item).mapToItem(root, 0, (ch.item as Item).implicitHeight / 2).y ?? 0;
+            popouts.hasCurrent = true;
+        }
+"""
+
+HOVER_NEW = f"""            popouts.currentCenter = (ch.item as Item).mapToItem(root, 0, (ch.item as Item).implicitHeight / 2).y ?? 0;
+            popouts.hasCurrent = true;
+        }} else if (id === "kodexbar") {{
+            {NL_HOVER_BEGIN}
+            const item = ch.item as Item;
+            popouts.currentName = "nolimits";
+            popouts.currentCenter = Qt.binding(() => item.mapToItem(root, 0, item.implicitHeight / 2).y);
+            popouts.hasCurrent = true;
+            {NL_HOVER_END}
+        }}
+"""
 
 
 def find_matching_brace(text: str, open_idx: int) -> int:
@@ -205,6 +231,15 @@ def patch_bar_qml(path: str, dry: bool) -> bool:
         else:
             print("AVISO: âncora 'spacing: Tokens.spacing.medium' não encontrada em Bar.qml; "
                   "bloco nolimits ignorado")
+
+    # 4. Ramo de hover no checkPopout (abre o popout nativo ao passar o mouse).
+    if NL_HOVER_BEGIN not in text:
+        if HOVER_OLD in text:
+            text = text.replace(HOVER_OLD, HOVER_NEW, 1)
+            changed = True
+        else:
+            print("AVISO: fim do bloco 'activeWindow' do checkPopout não encontrado em Bar.qml; "
+                  "ramo de hover do kodexbar ignorado")
 
     if not changed:
         print("Bar.qml: já patchado, nada a fazer")
