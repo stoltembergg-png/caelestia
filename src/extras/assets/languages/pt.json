@@ -1,0 +1,128 @@
+{
+  "quickactions": {
+    "systemusage": {
+      "cpu": "CPU",
+      "ram": "RAM",
+      "temp": "Temp",
+      "disk": "Disco",
+      "net": "Rede"
+    },
+    "timer": {
+      "tabs": {
+        "timer": "Timer",
+        "stopwatch": "Cronômetro",
+        "pomodoro": "Pomodoro"
+      },
+      "stopwatch": {
+        "lap": "Volta {number}"
+      },
+      "pomodoro": {
+        "phases": {
+          "focus": "Foco",
+          "short_break": "Pausa curta",
+          "long_break": "Pausa longa"
+        },
+        "settings": {
+          "work": "Trabalho (min)",
+          "short_break": "Pausa curta (min)",
+          "long_break": "Pausa longa (min)",
+          "sessions": "Sessões"
+        }
+      },
+      "notification": {
+        "app_name": "Timer do Quickshell",
+        "timer_finished_title": "Timer concluído",
+        "timer_finished_body": "Seu timer de {time} terminou.",
+        "focus_complete_title": "Foco concluído",
+        "focus_complete_body": "Bom trabalho! Hora de uma merecida pausa.",
+        "break_over_title": "Pausa terminada",
+        "break_over_body": "A pausa acabou. De volta ao foco!",
+        "pomo_skipped_title": "Pomodoro pulado",
+        "pomo_skipped_focus_body": "Sessão de foco pulada. Indo para a pausa.",
+        "pomo_skipped_break_body": "Pausa pulada. De volta ao foco."
+      }
+    }
+  },
+  "guide": {
+    "dock": {
+      "enabled": {
+        "title": "Ativar dock",
+        "desc": "Ativa a dock flutuante de aplicativos"
+      },
+      "position": {
+        "title": "Posição da dock",
+        "desc": "Selecione a borda onde a dock se fixa",
+        "bottom": "Embaixo",
+        "top": "Topo",
+        "left": "Esquerda",
+        "right": "Direita"
+      },
+      "elements": {
+        "title": "Número de elementos",
+        "desc": "Total de atalhos exibidos na dock"
+      },
+      "size": {
+        "title": "Tamanho dos elementos",
+        "desc": "Dimensões dos botões em pixels"
+      },
+      "autohide": {
+        "title": "Ocultar automaticamente",
+        "desc": "Oculta a dock quando o mouse sai da borda"
+      },
+      "timeout": {
+        "title": "Atraso para ocultar",
+        "desc": "Duração antes de ocultar após o mouse sair"
+      },
+      "floating": {
+        "title": "Dock flutuante",
+        "desc": "Descola a dock da borda com cantos arredondados"
+      },
+      "transparency": {
+        "title": "Transparência da dock",
+        "desc": "Ajusta a opacidade do fundo da dock"
+      },
+      "apps": {
+        "title": "Aplicativos da dock",
+        "singular": "app",
+        "plural": "apps",
+        "shuffle": "Embaralhar apps",
+        "empty": "Nenhum aplicativo na dock",
+        "enter_edit": "Editar",
+        "exit_edit": "Sair do modo de edição"
+      },
+      "picker": {
+        "search": "Pesquisar apps...",
+        "done": "Concluir",
+        "empty": "Nenhum aplicativo correspondente"
+      },
+      "opacity": {
+        "title": "Opacidade da dock",
+        "desc": "Ajusta a opacidade do fundo da dock"
+      },
+      "override_bounds": {
+        "title": "Ignorar correção de tamanho fora da tela",
+        "desc": "Mantém o tamanho personalizado mesmo se a dock passar da tela"
+      },
+      "scrolling": {
+        "title": "Ativar rolagem de elementos",
+        "desc": "Limita os visíveis e permite rolar com mouse ou touchpad"
+      },
+      "visible_elements": {
+        "title": "Elementos visíveis",
+        "desc": "Número de itens visíveis ao mesmo tempo"
+      },
+      "hover_scale": {
+        "title": "Efeito de escala no hover",
+        "desc": "Nível de ampliação ao passar o mouse nos itens"
+      },
+      "cascade_scale": {
+        "title": "Escalar vizinhos",
+        "desc": "Ampliação em cascata nos ícones vizinhos"
+      },
+      "exclusive": {
+        "title": "Modo exclusivo",
+        "desc": "Impede janelas de ocuparem o espaço da dock"
+      }
+    }
+  }
+}

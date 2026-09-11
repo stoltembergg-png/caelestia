@@ -12,13 +12,12 @@ src/extras/
   Extras.qml                  # [A] entry: QuickActions {} + Dock {} + IpcHandler "extras" + CustomShortcuts
   compat/                     # [A] singletons de adaptação
     ThemeBackend.qml Scaler.qml Config.qml Caching.qml I18n.qml
-    Sounds.qml SysData.qml OsdController.qml FloatingController.qml
+    Sounds.qml SysData.qml OsdController.qml FloatingController.qml NotesManager.qml
   reusables/                  # [A] só os usados: IconButton.qml ClickButton.qml DeleteButton.qml Input.qml
   assets/languages/en.json pt.json   # [A] chaves quickactions.* e dock.* do Serpantinum
   quickactions/               # [B]
     QuickActions.qml          # host (port de quickactions/Floating.qml)
     Notepad.qml NotesList.qml DrawAction.qml
-    NotesManager.qml          # singleton (registrado no qmldir)
   dock/Dock.qml               # [C] port de dock/Dock.qml
   scripts/notepad/md_render.py    # [B]
   scripts/minimize.sh             # [C]
@@ -35,7 +34,7 @@ singleton Sounds 1.0 compat/Sounds.qml
 singleton SysData 1.0 compat/SysData.qml
 singleton OsdController 1.0 compat/OsdController.qml
 singleton FloatingController 1.0 compat/FloatingController.qml
-singleton NotesManager 1.0 quickactions/NotesManager.qml
+singleton NotesManager 1.0 compat/NotesManager.qml
 Extras 1.0 Extras.qml
 ```
 
