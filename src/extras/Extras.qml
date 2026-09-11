@@ -1,7 +1,8 @@
 // Portado de Serpantinum: src/quickshell/Shell.qml / Main.qml (AGPL-3.0)
-// Entry do módulo extras: instancia os hosts QuickActions (lane B) e Dock (lane C),
-// expõe IPC target "extras" e os atalhos globais "quickactions"/"dock".
-// Delega o estado a FloatingController (quick actions) e ao shim Config (dock).
+// Entry do módulo extras: instancia os hosts QuickActions, Dock, NoLimits e WhatsApp,
+// expõe o IPC target "extras" e os atalhos globais correspondentes.
+// Estado: FloatingController (quick actions) / shim Config (dock) / singleton NoLimits /
+// instância local do WhatsAppOverlay.
 
 import QtQuick
 import Quickshell.Io
@@ -9,6 +10,8 @@ import qs.extras
 import qs.components.misc
 import "quickactions"
 import "dock"
+import "nolimits"
+import "whatsapp"
 
 Item {
     id: root
@@ -16,6 +19,12 @@ Item {
     QuickActions {}
 
     Dock {}
+
+    NoLimitsOverlay {}
+
+    WhatsAppOverlay {
+        id: whatsappOverlay
+    }
 
     function toggleQuickActions() {
         // O host decide qual aba abrir quando recebe tab vazio.
@@ -35,6 +44,18 @@ Item {
         Config.setSetting("dock", next);
     }
 
+    function toggleNoLimits() {
+        NoLimits.toggle();
+    }
+
+    function setNoLimitsView(view) {
+        NoLimits.show(view);
+    }
+
+    function toggleWhatsApp() {
+        whatsappOverlay.toggle();
+    }
+
     IpcHandler {
         target: "extras"
 
@@ -49,6 +70,18 @@ Item {
         function toggleDock(): void {
             root.toggleDock();
         }
+
+        function toggleNoLimits(): void {
+            root.toggleNoLimits();
+        }
+
+        function setNoLimitsView(view: string): void {
+            root.setNoLimitsView(view);
+        }
+
+        function toggleWhatsApp(): void {
+            root.toggleWhatsApp();
+        }
     }
 
     CustomShortcut {
@@ -61,5 +94,17 @@ Item {
         name: "dock"
         description: "Toggle dock"
         onPressed: root.toggleDock()
+    }
+
+    CustomShortcut {
+        name: "nolimits"
+        description: "Toggle No Limits (KodexBar) panel"
+        onPressed: root.toggleNoLimits()
+    }
+
+    CustomShortcut {
+        name: "whatsapp"
+        description: "Toggle WhatsApp panel"
+        onPressed: root.toggleWhatsApp()
     }
 }

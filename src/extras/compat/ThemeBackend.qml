@@ -31,6 +31,12 @@ Item {
     // Conteúdo / texto
     readonly property color text: Colours.palette.m3onSurface
     readonly property color subtext0: Colours.palette.m3onSurfaceVariant
+    readonly property color subtext1: Colours.palette.m3onSurfaceVariant
+
+    // Camadas/bordas (Catppuccin overlay0..2), adicionadas p/ o WhatsApp
+    readonly property color overlay0: Colours.palette.m3outlineVariant
+    readonly property color overlay1: Colours.palette.m3outline
+    readonly property color overlay2: Colours.palette.m3onSurfaceVariant
 
     // Acentos Catppuccin -> papéis m3 mais próximos (os acentos não têm
     // correspondência exata em m3; mantidos distintos para a paleta do desenho).
