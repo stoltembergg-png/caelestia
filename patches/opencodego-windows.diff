@@ -1,0 +1,196 @@
+--- /home/gabriel/.local/share/ai-cli-control/kodexbar-quotas.bak-202609102116	2026-09-10 21:16:32.670530607 -0300
++++ /home/gabriel/.local/share/ai-cli-control/kodexbar-quotas	2026-09-11 20:37:28.749141347 -0300
+@@ -4695,6 +4695,179 @@
+     return {**entry, "usage": {**usage, "antigravityRateWindows": windows}}
+ 
+ 
++# --- opencodego local window fix (Serpantinum) ---
++_OCG_5H_MS = 5 * 3600 * 1000
++_OCG_COST_LIMITS = {"primary": 12.00, "secondary": 30.00, "tertiary": 60.00}
++_OCG_USAGE_URL = "https://opencode.ai/zen/go/v1/usage"
++_OCG_USAGE_TIMEOUT = 20
++_OCG_USAGE_TTL = 60
++_OCG_USAGE_CACHE: dict[str, Any] = {"at": 0.0, "value": None}
++
++
++def _ocg_normalize_reset(value):
++    """Normalize an ISO reset timestamp to '%Y-%m-%dT%H:%M:%SZ' (strips ms/offset)."""
++    if not isinstance(value, str) or not value.strip():
++        return None
++    try:
++        dt = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
++        if dt.tzinfo is None:
++            dt = dt.replace(tzinfo=timezone.utc)
++        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
++    except Exception:
++        return None
++
++
++def _ocg_official_usage():
++    """Fetch account-wide OpenCode Go usage windows; None on any failure.
++
++    Reads the OpenCode Go API key from the local auth store (never logged) and
++    queries the official usage endpoint. Results are cached in memory for
++    _OCG_USAGE_TTL seconds to avoid repeating the call in the same execution.
++    """
++    now = time.time()
++    cached = _OCG_USAGE_CACHE.get("value")
++    if cached is not None and now - float(_OCG_USAGE_CACHE.get("at") or 0.0) < _OCG_USAGE_TTL:
++        return cached
++    try:
++        auth_path = Path(os.path.expanduser("~/.local/share/opencode/auth.json"))
++        with auth_path.open("r", encoding="utf-8") as fh:
++            auth = json.load(fh)
++        key = auth["opencode-go"]["key"]
++        if not isinstance(key, str) or not key:
++            return None
++        request = Request(
++            _OCG_USAGE_URL,
++            headers={
++                "Authorization": "Bearer " + key,
++                "User-Agent": "kodexbar-quotas/%s" % VERSION,
++                "Accept": "application/json",
++            },
++        )
++        with urlopen(request, timeout=_OCG_USAGE_TIMEOUT) as response:
++            payload = json.loads(response.read().decode("utf-8"))
++        usage = payload.get("usage") if isinstance(payload, dict) else None
++        if not isinstance(usage, dict):
++            usage = payload if isinstance(payload, dict) else None
++        if not isinstance(usage, dict):
++            return None
++        windows = {
++            name: usage[name]
++            for name in ("rolling", "weekly", "monthly")
++            if isinstance(usage.get(name), dict)
++        }
++        if not windows:
++            return None
++        _OCG_USAGE_CACHE["at"] = now
++        _OCG_USAGE_CACHE["value"] = windows
++        return windows
++    except Exception:
++        return None
++
++
++def _ocg_local_history():
++    """Return [(timestamp_ms, cost)] for OpenCode Go assistant messages from the local app DB."""
++    import sqlite3
++    db = Path(os.path.expanduser("~/.local/share/opencode/opencode.db"))
++    if not db.exists():
++        return []
++    try:
++        con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
++        rows = con.execute(
++            "SELECT CAST(COALESCE(json_extract(data, '$.time.created'), time_created) AS INTEGER) AS t,"
++            " CAST(json_extract(data, '$.cost') AS REAL) AS c"
++            " FROM message WHERE json_valid(data)"
++            " AND json_extract(data, '$.providerID') = 'opencode-go'"
++            " AND json_extract(data, '$.role') = 'assistant'"
++            " AND json_type(data, '$.cost') IN ('integer', 'real')"
++            " ORDER BY t ASC"
++        ).fetchall()
++        con.close()
++        return [(int(t), float(c or 0.0)) for t, c in rows if t]
++    except Exception:
++        return []
++
++
++def _ocg_fixed_5h_window(rows):
++    """Chain fixed 5h windows starting at the first request (matches the official dashboard)."""
++    i = 0
++    start = end = rows[0][0]
++    while i < len(rows):
++        start = rows[i][0]
++        end = start + _OCG_5H_MS
++        while i < len(rows) and rows[i][0] < end:
++            i += 1
++    return start, end
++
++
++def _ocg_fix_windows(entry):
++    usage = entry.get("usage")
++    if not isinstance(usage, dict):
++        return entry
++
++    # Prefer the official account-wide usage endpoint (matches the dashboard).
++    official = _ocg_official_usage()
++    if official:
++        new_usage = dict(usage)
++        applied = False
++        for entry_key, api_key in (("primary", "rolling"), ("secondary", "weekly"), ("tertiary", "monthly")):
++            window = usage.get(entry_key)
++            source = official.get(api_key)
++            if not isinstance(window, dict) or not isinstance(source, dict):
++                continue
++            new_window = dict(window)
++            raw_percent = source.get("percent")
++            try:
++                percent = max(0.0, min(100.0, float(raw_percent)))
++                new_window["usedPercent"] = int(percent) if float(raw_percent).is_integer() else round(percent, 1)
++                applied = True
++            except (TypeError, ValueError):
++                pass
++            reset = _ocg_normalize_reset(source.get("resetsAt"))
++            if reset:
++                new_window["resetsAt"] = reset
++                applied = True
++            new_usage[entry_key] = new_window
++        if applied:
++            return {**entry, "usage": new_usage}
++
++    # Fallback: derive windows from the local app DB using official plan limits.
++    rows = _ocg_local_history()
++    if not rows:
++        return entry
++    now_ms = int(time.time() * 1000)
++    start, end = _ocg_fixed_5h_window(rows)
++
++    def window_start_ms(key, span_ms):
++        window = usage.get(key)
++        if isinstance(window, dict):
++            iso = window.get("resetsAt")
++            if isinstance(iso, str) and iso:
++                try:
++                    dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
++                    return int(dt.timestamp() * 1000) - span_ms
++                except Exception:
++                    pass
++        return now_ms - span_ms
++
++    cost5 = sum(c for t, c in rows if start <= t < end)
++    cost7 = sum(c for t, c in rows if t >= window_start_ms("secondary", 7 * 24 * 3600 * 1000))
++    cost30 = sum(c for t, c in rows if t >= window_start_ms("tertiary", 30 * 24 * 3600 * 1000))
++    new_usage = dict(usage)
++    for key, cost, reset_ms in (("primary", cost5, end), ("secondary", cost7, None), ("tertiary", cost30, None)):
++        window = usage.get(key)
++        if not isinstance(window, dict):
++            continue
++        new_window = dict(window)
++        limit = _OCG_COST_LIMITS.get(key)
++        if limit:
++            new_window["usedPercent"] = round(max(0.0, min(100.0, cost / limit * 100.0)), 1)
++        if reset_ms:
++            new_window["resetsAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(reset_ms / 1000))
++        new_usage[key] = new_window
++    return {**entry, "usage": new_usage}
++# --- fim do fix ---
++
++
+ def normalize_opencodego_entry(entry: Any) -> Any:
+     """Add the stable subscription identity missing from upstream OpenCode Go data."""
+     if not isinstance(entry, dict) or str(entry.get("provider") or "").lower() != "opencodego":
+@@ -4706,7 +4879,12 @@
+     identity = dict(raw_identity) if isinstance(raw_identity, dict) else {}
+     identity.setdefault("providerID", "opencodego")
+     identity.setdefault("loginMethod", "OpenCode Go")
+-    return {**entry, "usage": {**usage, "identity": identity}}
++    result = {**entry, "usage": {**usage, "identity": identity}}
++    try:
++        result = _ocg_fix_windows(result)
++    except Exception:
++        pass
++    return result
+ 
+ 
+ def _dual_failure_message(provider: str, native_failure: FetchFallback, upstream_detail: str) -> str:
