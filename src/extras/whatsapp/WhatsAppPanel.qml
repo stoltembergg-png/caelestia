@@ -15,8 +15,9 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 // Evolução do porte do Serpantinum (src/quickshell/whatsapp/WhatsAppPopup.qml):
-//  * SEM fundo próprio (o blob do core desenha atrás); só a máscara arredondada
-//    do webview (MultiEffect) é mantida.
+//  * SEM fundo próprio (o blob do core desenha atrás).
+//  * O WebEngine NÃO compõe dentro de item com layer/máscara (ver nota em
+//    `maskedLayer`); a máscara arredondada fica desabilitada e inerte.
 //  * Tema por tokens --WDS-* mapeados de Colours (contrato estável do guia de
 //    tema, lib-3); as variáveis legadas ficam como fallback apontando para o
 //    WDS. Alpha corrigido para CSS (#RRGGBB / rgba()), nunca #AARRGGBB.
@@ -350,17 +351,21 @@ Item {
         onActivated: window.toggleSidebar()
     }
 
-    // ---- Conteúdo (mascarado) -------------------------------------------
+    // ---- Conteúdo -------------------------------------------------------
     Item {
         id: content
 
         anchors.fill: parent
 
+        // NOTA (limitação do QtWebEngine): o WebEngine não compõe dentro de um
+        // item com layer/máscara — com `layer.enabled: true` o painel fica
+        // invisível. Por isso `layer.enabled` fica false de propósito; o
+        // MultiEffect/roundMask permanecem declarados mas inertes. NÃO reativar.
         Item {
             id: maskedLayer
 
             anchors.fill: parent
-            layer.enabled: true
+            layer.enabled: false
             layer.effect: MultiEffect {
                 maskEnabled: true
                 maskSource: roundMask

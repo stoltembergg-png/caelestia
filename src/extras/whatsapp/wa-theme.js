@@ -135,21 +135,46 @@
             if (cfg.hideTabs || full)
                 css += "#side [data-navbar-item],#side [role=tablist]{display:none !important;}";
             css += "[data-testid^=banner-],div[role=banner]{display:none !important;}";
-            css += "[data-testid=typing],[data-testid*=badge],[data-testid*=unread]{display:none !important;}";
+            // Só o indicador em si. NUNCA um seletor genérico como
+            // `[data-testid*=unread]`/`[data-testid*=badge]`: casavam também com
+            // a própria linha da conversa e deixavam a lista vazia.
+            css += "[data-testid=typing],"
+                 + "[data-testid=icon-unread-count],[data-testid=icon-unread-count] *"
+                 + "{display:none !important;}";
         }
 
         if (full)
             css += "#main header{min-height:0 !important;padding-top:0 !important;padding-bottom:0 !important;box-shadow:none !important;}";
 
-        // Sidebar oculta (modo "só conversa"): classe no body, ligada/desligada
-        // pelo atalho configurado e pelo botão do painel.
-        css += "body.qs-hide-side #side{display:none !important;}";
+        // 4) Sidebar oculta (modo "só conversa"). Além da classe no <body>
+        // (mantida por `applySidebarClass`), emitimos a regra efetiva direto no
+        // stylesheet: é persistida na injeção de load e não depende da classe
+        // sobreviver à hidratação do React.
+        if (cfg.hideSidebar) {
+            css += "body.qs-hide-side #side{display:none !important;}";
+            css += "#side{display:none !important;}";
+        }
 
-        // 4) Superfícies transparentes para o blob do shell aparecer atrás.
+        // 5) Cabe no viewport (560px): sem overflow horizontal e colunas
+        // encolhíveis. Em single-pane `#main` ocupa 100%; com a sidebar
+        // visível, `#side`/`#pane-side` encolhem em vez de empurrar o painel
+        // de conversa para fora do ecrã.
+        css += "html,body{overflow-x:hidden !important;width:100% !important;max-width:100% !important;}";
+        css += "#app,.app-wrapper-web{width:100% !important;max-width:100% !important;min-width:0 !important;overflow-x:hidden !important;}";
+        css += "#main{min-width:0 !important;max-width:100% !important;}";
+        if (cfg.hideSidebar)
+            css += "#main{width:100% !important;}";
+        else
+            css += "#main{flex:1 1 auto !important;}";
+        css += "#side,#pane-side{min-width:0 !important;}";
+        css += "#side{flex-shrink:1 !important;}";
+        css += "@media (max-width:700px){#side{width:38% !important;min-width:220px !important;}}";
+
+        // 6) Superfícies transparentes para o blob do shell aparecer atrás.
         css += "html,body,.app-wrapper-web,#app,#main,#side,#pane-side,#main header,#main footer"
              + "{background-color:transparent !important;}";
 
-        // 5) Desfoque atrás das superfícies principais.
+        // 7) Desfoque atrás das superfícies principais.
         if (cfg.blur)
             css += "#side,#pane-side,#main header,#main footer"
                  + "{backdrop-filter:blur(18px) saturate(140%) !important;"
@@ -172,6 +197,16 @@
         return result;
     }
 
+    // Aplica/remove a classe nos dois nós: o React do WhatsApp reescreve
+    // body.class durante a hidratação, por isso reforçamos em <html> também.
+    function applySidebarClass(cfg) {
+        var hidden = !!cfg.hideSidebar;
+        if (document.documentElement)
+            document.documentElement.classList.toggle("qs-hide-side", hidden);
+        if (document.body)
+            document.body.classList.toggle("qs-hide-side", hidden);
+    }
+
     function ensureStyle(cfg) {
         var style = document.getElementById(STYLE_ID);
         if (!style) {
@@ -180,8 +215,7 @@
             (document.head || document.documentElement).appendChild(style);
         }
         style.textContent = buildCss(cfg);
-        if (document.body)
-            document.body.classList.toggle("qs-hide-side", !!cfg.hideSidebar);
+        applySidebarClass(cfg);
         return style;
     }
 
@@ -214,29 +248,58 @@
         return cfg.hideSidebar;
     }
 
-    // Re-cria o <style> se o WhatsApp o remover (navegações SPA). Observa só os
-    // filhos diretos de <html> para ser barato; o painel também re-aplica por
-    // timer, pelo que a cobertura é dupla.
+    // Re-cria o <style> se o WhatsApp o remover e re-afirma a classe da sidebar
+    // se o React a reescrever. Observa <html> (troca de <head>/<body>) e o
+    // <body> atual (mudanças de class); o painel também re-aplica por timer.
+    var bodyObserver = null;
+    var observedBody = null;
+
+    function reconcile() {
+        if (reconcile.scheduled)
+            return;
+        reconcile.scheduled = true;
+        var run = function () {
+            reconcile.scheduled = false;
+            var cfg = window.__qsWaConfig || DEFAULTS;
+            if (!document.getElementById(STYLE_ID))
+                ensureStyle(cfg);
+            else
+                applySidebarClass(cfg);
+            watchBody();
+        };
+        if (typeof requestAnimationFrame === "function")
+            requestAnimationFrame(run);
+        else
+            setTimeout(run, 16);
+    }
+
+    function watchBody() {
+        if (!document.body || document.body === observedBody)
+            return;
+        if (bodyObserver)
+            bodyObserver.disconnect();
+        observedBody = document.body;
+        bodyObserver = new MutationObserver(reconcile);
+        bodyObserver.observe(observedBody, { attributes: true, attributeFilter: ["class"] });
+    }
+
     function startObserver() {
         if (!document.documentElement || typeof MutationObserver === "undefined")
             return;
+        new MutationObserver(reconcile).observe(document.documentElement, { childList: true, subtree: false });
+        watchBody();
+    }
 
-        var scheduled = false;
-        var observer = new MutationObserver(function () {
-            if (scheduled)
-                return;
-            scheduled = true;
-            var run = function () {
-                scheduled = false;
-                if (!document.getElementById(STYLE_ID))
-                    ensureStyle(window.__qsWaConfig || DEFAULTS);
-            };
-            if (typeof requestAnimationFrame === "function")
-                requestAnimationFrame(run);
-            else
-                setTimeout(run, 16);
-        });
-        observer.observe(document.documentElement, { childList: true, subtree: false });
+    // Reforça a classe durante a hidratação inicial (finito; o painel também
+    // re-aplica por timer enquanto está visível).
+    function startSettle() {
+        var tries = 0;
+        var id = setInterval(function () {
+            applySidebarClass(window.__qsWaConfig || DEFAULTS);
+            watchBody();
+            if (++tries >= 12)
+                clearInterval(id);
+        }, 500);
     }
 
     window.__qsWaApply = apply;
@@ -246,4 +309,5 @@
 
     startObserver();
     apply(window.__qsWaConfig);
+    startSettle();
 })();
