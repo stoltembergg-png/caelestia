@@ -1,0 +1,5 @@
+module qs.extras.whatsapp
+
+singleton WhatsAppClient 1.0 services/WhatsAppClient.qml
+singleton WhatsAppState 1.0 services/WhatsAppState.qml
+Drawer 1.0 modules/whatsapp/Drawer.qml
