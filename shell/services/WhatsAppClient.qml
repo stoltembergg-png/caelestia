@@ -28,6 +28,10 @@ Singleton {
     property string authState: "unknown"
     property string connectionState: "disconnected"
     property bool loggedIn: false
+    // Fontes independentes de "pareado": o daemon pode anunciar por
+    // `auth.connected`, por `connection.updated {state:"connected"}` ou pelo
+    // snapshot de `status`, e qualquer uma delas basta para sair do LoginView.
+    readonly property bool paired: root.loggedIn || root.authState === "connected" || root.connectionState === "connected"
     property string pushName: ""
     property string accountJid: ""
     property string lastError: ""
@@ -276,7 +280,11 @@ Singleton {
         root._reconnectAttempts = 0;
         reconnectTimer.stop();
         root._lastRxAt = Date.now();
-        root.connectionState = "connected";
+        // O socket subiu, mas o estado do WhatsApp ainda não é conhecido: NÃO
+        // marcar "connected" aqui (senão o LoginView some antes do pareamento).
+        // `status`/eventos trazem o estado real do daemon.
+        if (!root.paired)
+            root.connectionState = "connecting";
         if (root.authState === "unknown" || root.authState === "disconnected")
             root.authState = "connecting";
 
@@ -320,17 +328,41 @@ Singleton {
         root._send("status", null, function (res, err) {
             if (err || !res)
                 return;
-            if (res.connection && res.connection.state)
-                root.connectionState = String(res.connection.state);
-            if (res.auth) {
-                root.authState = String(res.auth.state || root.authState);
-                root.loggedIn = res.auth.logged_in === true;
-                root.pushName = String(res.auth.push_name || "");
-                root.accountJid = String(res.auth.jid || "");
+            const conn = res.connection ? String(res.connection.state || "") : "";
+            const auth = res.auth || ({});
+            const authSt = String(auth.state || "");
+            if (conn)
+                root.connectionState = conn;
+            const isPaired = auth.logged_in === true || auth.logged_in === 1 || String(auth.logged_in) === "true" || authSt === "connected" || conn === "connected";
+            if (isPaired) {
+                root._markPaired(auth.push_name, auth.jid);
+            } else {
+                root.loggedIn = false;
+                if (authSt)
+                    root.authState = authSt;
+                root.pushName = String(auth.push_name || "");
+                root.accountJid = String(auth.jid || "");
             }
-            if (root.loggedIn)
-                root.refreshChats();
         });
+    }
+
+    // Ponto único de "pareado": usado por `auth.connected`, por
+    // `connection.updated {state:"connected"}` e pelo snapshot de `status`.
+    // Limpa QR/erro, esconde o LoginView (via `paired`) e recarrega os chats.
+    function _markPaired(pushName, jid) {
+        const wasPaired = root.loggedIn;
+        root.loggedIn = true;
+        root.authState = "connected";
+        root.connectionState = "connected";
+        root.qrPng = "";
+        root.lastError = "";
+        loginWatch.stop();
+        if (pushName)
+            root.pushName = String(pushName);
+        if (jid)
+            root.accountJid = String(jid);
+        if (!wasPaired || chatsModel.count === 0)
+            root.refreshChats();
     }
 
     // ------------------------------------------------------------------ //
@@ -384,14 +416,7 @@ Singleton {
             if (!root.loggedIn && root.authState !== "connected")
                 root.authState = "connecting";
         } else if (name === "auth.connected") {
-            root.loggedIn = true;
-            root.authState = "connected";
-            root.qrPng = "";
-            root.pushName = String(data.push_name || root.pushName);
-            root.accountJid = String(data.jid || root.accountJid);
-            root.lastError = "";
-            loginWatch.stop();
-            root.refreshChats();
+            root._markPaired(data.push_name, data.jid);
         } else if (name === "auth.disconnected") {
             root.loggedIn = false;
             root.authState = "disconnected";
@@ -407,9 +432,17 @@ Singleton {
             if (!root.loggedIn && root.authState !== "connected")
                 root.authState = "needs_pairing";
         } else if (name === "connection.updated") {
-            root.connectionState = String(data.state || "disconnected");
-            if (data.state === "connected" && root.authState === "connecting")
-                root._bootstrap();
+            const st = String(data.state || "disconnected");
+            root.connectionState = st;
+            if (st === "connected") {
+                // "connected" no daemon = sessão pareada ligada ao WhatsApp.
+                root._markPaired();
+            } else if (!root.paired) {
+                if (st === "needs_pairing" || st === "logged_out")
+                    root.authState = st;
+                else if (st === "connecting")
+                    root.authState = "connecting";
+            }
         } else if (name === "message.received") {
             root._onMessageReceived(data);
         } else if (name === "message.updated" || name === "message.deleted") {
@@ -424,12 +457,43 @@ Singleton {
     // ------------------------------------------------------------------ //
     // Conversas
     // ------------------------------------------------------------------ //
+    function _shortTail(local) {
+        const s = String(local || "");
+        return s.length > 4 ? s.slice(-4) : s;
+    }
+
+    // Nome exibível mesmo quando o daemon ainda não resolveu o contato:
+    // nunca devolve o JID/LID cru com domínio. Para LID usa "Contato NNNN";
+    // para telefone usa "+<número>"; grupo vira "Grupo".
+    function _readableName(name, jid, kind) {
+        const jidStr = String(jid || "");
+        const raw = String(name || "").trim();
+        const at = jidStr.indexOf("@");
+        const local = (at >= 0 ? jidStr.substring(0, at) : jidStr).split(":")[0];
+        const isGroup = String(kind || "") === "group" || jidStr.indexOf("@g.us") >= 0;
+        const isLid = jidStr.indexOf("@lid") >= 0;
+        const rawNumeric = /^[0-9]{6,}$/.test(raw);
+        // O nome é genérico se vazio, igual ao JID/local, ou um número cru
+        // (LID não resolvido ou telefone sem contato).
+        const generic = raw.length === 0 || raw === jidStr || raw === local || (isLid && rawNumeric) || (rawNumeric && raw.length >= 12 && raw !== local);
+        if (!generic)
+            return raw;
+        if (isGroup)
+            return "Grupo";
+        const num = rawNumeric ? raw : local;
+        if (isLid)
+            return "Contato " + root._shortTail(num);
+        if (/^[0-9]{6,}$/.test(num))
+            return "+" + num;
+        return "Contato";
+    }
+
     function _chatRow(c) {
         return {
             "jid": String(c.jid || ""),
             "kind": String(c.kind || "dm"),
-            "name": String(c.name || c.jid || ""),
-            "lastMessage": String(c.lastMessage || c.last_message || ""),
+            "name": root._readableName(c.name, c.jid, c.kind),
+            "lastMessage": String(c.lastMessage || c.last_message || c.lastPreview || ""),
             "timestamp": String(c.timestamp || ""),
             "unread": Number(c.unread || c.unread_count || 0)
         };
@@ -445,7 +509,9 @@ Singleton {
 
     function _chatName(jid) {
         const idx = root._chatIndex(jid);
-        return idx >= 0 ? String(chatsModel.get(idx).name || jid) : String(jid || "");
+        if (idx >= 0)
+            return String(chatsModel.get(idx).name || jid);
+        return root._readableName("", jid, "");
     }
 
     function _recountUnread() {

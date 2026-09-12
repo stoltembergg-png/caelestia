@@ -22,7 +22,10 @@ Item {
         anchors.fill: parent
         model: WhatsAppClient.chats
         spacing: 2
+        topMargin: Tokens.spacing.small
+        bottomMargin: Tokens.padding.medium
         boundsBehavior: Flickable.StopAtBounds
+        reuseItems: false
 
         delegate: Component {
             Item {
@@ -41,6 +44,8 @@ Item {
                 readonly property bool selected: WhatsAppClient.currentChat === row.jid
                 readonly property real badgeWidth: row.unread > 0 ? Math.max(20, badgeLabel.implicitWidth + Tokens.spacing.small) : 0
 
+                // Hora relativa curta: "agora", "N min", "hh:mm", "ontem",
+                // dia da semana ou data. Timestamp é string de ms (só formata).
                 function timeText(ts): string {
                     if (!ts)
                         return "";
@@ -48,8 +53,20 @@ Item {
                     if (isNaN(d.getTime()))
                         return "";
                     const now = new Date();
-                    if (d.toDateString() === now.toDateString())
+                    const diff = now.getTime() - d.getTime();
+                    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                    if (d.getTime() >= startOfToday) {
+                        const mins = Math.floor(diff / 60000);
+                        if (mins < 1)
+                            return "agora";
+                        if (mins < 60)
+                            return mins + " min";
                         return Qt.formatDateTime(d, "hh:mm");
+                    }
+                    if (d.getTime() >= startOfToday - 86400000)
+                        return "ontem";
+                    if (d.getTime() >= startOfToday - 6 * 86400000)
+                        return Qt.formatDateTime(d, "ddd");
                     return Qt.formatDateTime(d, "dd/MM/yy");
                 }
 

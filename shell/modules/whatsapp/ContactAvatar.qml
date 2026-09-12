@@ -30,7 +30,7 @@ Item {
 
     readonly property int _hash: {
         let h = 0;
-        const s = root.jid || root.name;
+        const s = String(root.jid || root.name || "?");
         for (let i = 0; i < s.length; i++)
             h = (h * 31 + s.charCodeAt(i)) % 100000;
         return h;
@@ -39,15 +39,18 @@ Item {
     readonly property color _background: root._palette[root._hash % root._palette.length]
 
     function initials(): string {
-        const s = String(root.name || root.jid || "").trim();
+        const s = String(root.name || "").trim();
         if (!s.length)
             return "?";
-        const parts = s.split(/\s+/).filter(function (p) {
+        const clean = s.replace(/^\+/, "");
+        const parts = clean.split(/\s+/).filter(function (p) {
             return p.length > 0;
         });
         if (parts.length >= 2)
             return String(parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
-        return String(s).substring(0, 2).toUpperCase();
+        const alnum = clean.replace(/[^0-9A-Za-zÀ-ÿ]/g, "");
+        const base = alnum.length ? alnum : clean;
+        return String(base).substring(0, 2).toUpperCase();
     }
 
     implicitWidth: root.size

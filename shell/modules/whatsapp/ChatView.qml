@@ -31,7 +31,10 @@ Item {
                 anchors.fill: parent
                 model: WhatsAppClient.messages
                 spacing: Tokens.spacing.extraSmall
+                topMargin: Tokens.spacing.small
+                bottomMargin: Tokens.spacing.small
                 boundsBehavior: Flickable.StopAtBounds
+                reuseItems: false
 
                 delegate: Component {
                     Item {

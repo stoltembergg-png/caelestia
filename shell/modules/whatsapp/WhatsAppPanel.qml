@@ -21,8 +21,11 @@ Item {
     property var drawer
 
     // 0 = login, 1 = lista, 2 = conversa.
+    // `paired` cobre logged_in, authState e connectionState, então o LoginView
+    // nunca fica sobreposto à lista quando o daemon anuncia "connected".
+    readonly property bool paired: WhatsAppClient.paired
     readonly property int page: {
-        if (!WhatsAppClient.loggedIn)
+        if (!root.paired)
             return 0;
         return WhatsAppClient.currentChat.length > 0 ? 2 : 1;
     }
@@ -59,7 +62,7 @@ Item {
     ColumnLayout {
         anchors.fill: parent
         anchors.topMargin: Tokens.padding.large
-        anchors.bottomMargin: Tokens.padding.medium
+        anchors.bottomMargin: Tokens.spacing.extraSmall
         anchors.leftMargin: Tokens.padding.large
         anchors.rightMargin: Tokens.padding.medium
         spacing: Tokens.spacing.small
@@ -144,7 +147,7 @@ Item {
             LoginView {
                 anchors.fill: parent
                 opacity: root.page === 0 ? 1 : 0
-                visible: opacity > 0.001
+                visible: root.page === 0
                 enabled: root.page === 0
                 onGenerate: WhatsAppClient.startLogin()
 
@@ -158,7 +161,7 @@ Item {
             ChatList {
                 anchors.fill: parent
                 opacity: root.page === 1 ? 1 : 0
-                visible: opacity > 0.001
+                visible: root.page === 1
                 enabled: root.page === 1
 
                 Behavior on opacity {
@@ -171,7 +174,7 @@ Item {
             ChatView {
                 anchors.fill: parent
                 opacity: root.page === 2 ? 1 : 0
-                visible: opacity > 0.001
+                visible: root.page === 2
                 enabled: root.page === 2
 
                 Behavior on opacity {
