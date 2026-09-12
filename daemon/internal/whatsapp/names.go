@@ -118,16 +118,22 @@ func (r *NameResolver) resolve(ctx context.Context, repo *database.Repo, jid typ
 
 	// (d) group subject. Network GetGroupInfo is deliberately not used here:
 	// the persistence worker would block on it and chats.list could turn into
-	// an uncontrolled N+1. cae_groups is fed by GroupInfo events and history
-	// sync, which covers live groups.
+	// an uncontrolled N+1. cae_groups is fed by GroupInfo events, history sync
+	// and the bounded group-name repair (group_repair.go).
+	//
+	// A group is NEVER named after a participant: the live push hint belongs to
+	// the sender, so it is deliberately ignored for @g.us. The chat's own
+	// stored name (from history sync / group info) is the next best source; a
+	// group with neither cae_groups nor a stored name stays unresolved and the
+	// caller must not overwrite the existing value with a fallback.
 	if jid.Server == types.GroupServer {
 		if repo != nil {
 			if g, err := repo.GetGroup(ctx, jid.String()); err == nil && g.Name != "" {
 				return g.Name, true
 			}
-		}
-		if pushHint != "" {
-			return pushHint, true
+			if c, err := repo.GetChat(ctx, jid.String()); err == nil && chatNameResolved(c.Name, c.JID) {
+				return c.Name, true
+			}
 		}
 		return jid.String(), false
 	}

@@ -118,6 +118,9 @@ type Service struct {
 	client    waClient
 	device    *store.Device
 	persister *Persister
+	// groupRepair is created with persistence and kicked on every successful
+	// connection to restore group names clobbered by older builds.
+	groupRepair *GroupRepairer
 
 	// namesMu guards the lazily created display-name resolver. It is separate
 	// from mu because nameResolver() is called while mu may already be held.

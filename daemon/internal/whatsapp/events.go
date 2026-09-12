@@ -194,6 +194,9 @@ func (s *Service) process(ev *internalEvent) {
 			s.emit(EventAuthConnected, s.connectedData())
 		}
 		s.sendPresence()
+		// Restore any group name that an older build clobbered with a sender
+		// push name. Bounded and rate-limited; no-op until persistence exists.
+		s.kickGroupRepair()
 	case evtDisconnected:
 		if s.isTerminal() {
 			return

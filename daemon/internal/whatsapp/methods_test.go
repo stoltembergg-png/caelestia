@@ -46,6 +46,10 @@ type methodFake struct {
 	uploadErr  error
 	uploadApp  whatsmeow.MediaType
 	uploadRead int64
+
+	groupInfo  map[string]*types.GroupInfo
+	groupErr   error
+	groupCalls int
 }
 
 func (f *methodFake) SendMessage(_ context.Context, to types.JID, message *waE2E.Message, _ ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
@@ -100,6 +104,24 @@ func (f *methodFake) UploadReader(_ context.Context, plaintext io.Reader, _ io.R
 	return f.uploadResp, nil
 }
 
+func (f *methodFake) GetGroupInfo(_ context.Context, jid types.JID) (*types.GroupInfo, error) {
+	f.mu.Lock()
+	f.groupCalls++
+	info := f.groupInfo[jid.String()]
+	f.mu.Unlock()
+	if f.groupErr != nil {
+		return nil, f.groupErr
+	}
+	return info, nil
+}
+
+// groupCallCount returns how many GetGroupInfo calls the fake served.
+func (f *methodFake) groupCallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.groupCalls
+}
+
 func (f *methodFake) BuildReaction(chat, sender types.JID, id types.MessageID, reaction string) *waE2E.Message {
 	return &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{
 		Key: &waCommon.MessageKey{
@@ -127,7 +149,7 @@ func newTestMethods(t *testing.T) (*Methods, *Service, *methodFake, *database.Re
 		FileSHA256:    make([]byte, 32),
 		FileEncSHA256: make([]byte, 32),
 		FileLength:    4,
-	}}
+	}, groupInfo: make(map[string]*types.GroupInfo)}
 	svc.mu.Lock()
 	svc.client = mf
 	svc.mu.Unlock()

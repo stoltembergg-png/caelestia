@@ -39,6 +39,10 @@ type fullClient interface {
 	// UploadReader streams plaintext to WhatsApp for an outbound media message.
 	// tempFile is the scratch file the encryption pass uses; the caller owns it.
 	UploadReader(ctx context.Context, plaintext io.Reader, tempFile io.ReadWriteSeeker, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error)
+	// GetGroupInfo fetches a group's subject/participants. Used by the bounded
+	// group-name repair to restore a persisted name clobbered by a sender push
+	// name (see group_repair.go).
+	GetGroupInfo(ctx context.Context, jid types.JID) (*types.GroupInfo, error)
 }
 
 // fullClient returns the current client as a fullClient, or nil when the
@@ -132,6 +136,7 @@ func (s *Service) EnablePersistence(repo *database.Repo) *Persister {
 	// and this call attaches it to the client the rebuild has just installed.
 	s.mu.Lock()
 	s.persister = p
+	s.groupRepair = NewGroupRepairer(s, repo, s.logger)
 	if s.client != nil {
 		s.client.AddEventHandler(p.handleEvent)
 	}
@@ -306,13 +311,15 @@ func (p *Persister) persistMessageWithRepo(ctx context.Context, repo *database.R
 		kind = "group"
 	}
 
-	// Resolve the display name: group subject, then saved contact (walking any
-	// LID<->PN mapping), then push name. An unresolved name is passed through
-	// as "": UpsertChat never overwrites a known name with an empty one and a
-	// lazy fallback (formatted phone / raw JID) is never persisted as if it
-	// were a real name.
+	// Resolve the display name: for a DM the saved contact/push name, for a
+	// group the authoritative subject (cae_groups / stored group name). The
+	// sender's push name is never used to name a group — a message from Fábio
+	// in a group must not rename the group to "Fábio". An unresolved name is
+	// passed through as "": UpsertChat never overwrites a known name with an
+	// empty one and a lazy fallback (formatted phone / raw JID) is never
+	// persisted as if it were a real name.
 	push := ""
-	if !m.Info.IsFromMe {
+	if !m.Info.IsFromMe && kind != "group" {
 		push = m.Info.PushName
 	}
 	name := p.resolveName(ctx, repo, chatJID, push)
@@ -557,11 +564,21 @@ func (p *Persister) persistGroup(ctx context.Context, g *events.GroupInfo) error
 		return err
 	}
 	if group.Name != "" {
-		return p.repo.UpsertChat(ctx, database.Chat{
+		prev, _ := p.repo.GetChat(ctx, group.JID)
+		if err := p.repo.UpsertChat(ctx, database.Chat{
 			JID:  group.JID,
 			Kind: "group",
 			Name: group.Name,
-		})
+		}); err != nil {
+			return err
+		}
+		// A group subject is authoritative: announce it so clients drop a stale
+		// (possibly participant-named) row.
+		if prev == nil || prev.Name != group.Name {
+			if c, err := p.repo.GetChat(ctx, group.JID); err == nil {
+				p.emitChatUpdated(c)
+			}
+		}
 	}
 	return nil
 }
