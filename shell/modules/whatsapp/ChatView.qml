@@ -40,8 +40,11 @@ Item {
     readonly property bool compact: WhatsAppSettings.getBool("compactMode", false)
 
     // A mídia carrega de forma assíncrona e aumenta o contentHeight DEPOIS do
-    // positionViewAtEnd; sem re-rolar, o último balão (legenda/timestamp/cauda)
-    // fica abaixo da dobra/fade. Re-posiciona por ~1,2 s após abrir/receber.
+    // positionViewAtEnd. Re-posiciona por uma janela curta (~1,8 s) após abrir/
+    // receber, garantindo que o último balão (legenda/timestamp/cauda) pare no
+    // fim real. Não cancelamos em movementStarted: o próprio
+    // positionViewAtEnd() emite movimento e mataria a janela antes da altura
+    // assentar (era o que escondia o timestamp/cauda do último balão).
     function stickBottom(): void {
         stickTimer.restart();
     }
@@ -56,7 +59,7 @@ Item {
         onTriggered: {
             ticks++;
             list.positionViewAtEnd();
-            if (ticks >= 8)
+            if (ticks >= 12)
                 stop();
         }
         onRunningChanged: {
@@ -80,11 +83,13 @@ Item {
                 model: WhatsAppClient.messages
                 // O ritmo vertical é do delegate (dia/grupo), não do ListView.
                 spacing: 0
-                // Fade discreto e margens maiores que a zona de fade, para a
-                // primeira/última mensagem (e legenda/timestamp) ficarem nítidas.
+                // Fade só no topo: sem fade inferior, a legenda/timestamp/cauda
+                // do último balão não somem no gradiente (o rodapé fica por
+                // conta do scrim sutil atrás do composer).
                 fadeAmount: root.compact ? 0.035 : 0.04
+                bottomFadeOpacity: 1
                 topMargin: Math.round(height * fadeAmount) + Tokens.spacing.small
-                bottomMargin: Math.round(height * fadeAmount) + Tokens.spacing.medium
+                bottomMargin: root.compact ? Tokens.padding.medium : Tokens.padding.large
                 boundsBehavior: Flickable.StopAtBounds
                 reuseItems: true
                 cacheBuffer: 4000
