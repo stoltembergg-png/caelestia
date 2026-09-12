@@ -126,6 +126,12 @@ type Service struct {
 	// cancelling a login (auth.cancel/logout/Close) unblocks a QR channel that
 	// whatsmeow never closes on its own.
 	loginCancel context.CancelFunc
+	// loginGen identifies the current login. consumeQRCodes carries the
+	// generation it was started with and stopLoginGen only clears/cancels when
+	// it still matches: a stale consumer that finishes after a newer auth.start
+	// can therefore never wipe the new login (the reason a second pairing
+	// attempt used to see login_active with no QR at all).
+	loginGen uint64
 
 	banMu    sync.Mutex
 	banUntil time.Time

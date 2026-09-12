@@ -152,6 +152,14 @@ cwctl login --timeout 2m
 - **Já pareado**: `auth.start` responde `invalid_request`
   (`whatsapp: already logged in`). Faça `cwctl status`; se quiser reparear,
   `cwctl logout` primeiro.
+- **Repetir após expirar/cancelar**: um timeout, `auth.cancel` ou erro de
+  pareamento encerram a tentativa e limpam o estado interno, então o próximo
+  `auth.start` gera um QR novo. Enquanto uma tentativa ainda está ativa, um
+  `auth.start` concorrente responde `invalid_request`
+  (`whatsapp: a login is already in progress`) e o daemon registra
+  `auth.start refused reason="login already active"`. A UI (`WhatsAppClient`)
+  cancela a tentativa anterior antes de pedir outra, evitando ficar presa em
+  "Gerando código…".
 
 ---
 

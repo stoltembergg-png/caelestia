@@ -113,6 +113,10 @@ func (f *fakeClient) GetQRChannel(context.Context) (<-chan whatsmeow.QRChannelIt
 	f.mu.Lock()
 	f.getQRCalled = true
 	f.qrBeforeConnect = !f.connectCalled
+	// Mirror whatsmeow: every GetQRChannel returns a brand new channel, so a
+	// stale consumer from a previous login cannot steal a code meant for the
+	// current one.
+	f.qrChan = make(chan whatsmeow.QRChannelItem, 8)
 	f.mu.Unlock()
 	return f.qrChan, nil
 }

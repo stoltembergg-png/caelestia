@@ -142,6 +142,22 @@ Singleton {
         onTriggered: root._expireRequests()
     }
 
+    // Watchdog do QR: o `auth.start` respondeu, mas nenhum `auth.qr` chegou.
+    // Sem isso a UI ficava presa em "Gerando código…" para sempre quando o
+    // canal de QR morria em silêncio (timeout/cancel/erro do daemon).
+    Timer {
+        id: loginWatch
+
+        interval: 20000
+        repeat: false
+        onTriggered: {
+            if (root.loggedIn || root.authState === "connected" || root.qrPng.length > 0)
+                return;
+            root.lastError = "tempo esgotado ao gerar o código; tente de novo";
+            root.authState = "needs_pairing";
+        }
+    }
+
     // ------------------------------------------------------------------ //
     // Máquina de estado / correlação
     // ------------------------------------------------------------------ //
@@ -363,6 +379,8 @@ Singleton {
                 root.qrPng = s.startsWith("data:") ? s : "data:image/png;base64," + s;
             }
             root.qrTimeout = Number(data.timeout || 0);
+            root.lastError = "";
+            loginWatch.stop();
             if (!root.loggedIn && root.authState !== "connected")
                 root.authState = "connecting";
         } else if (name === "auth.connected") {
@@ -372,14 +390,22 @@ Singleton {
             root.pushName = String(data.push_name || root.pushName);
             root.accountJid = String(data.jid || root.accountJid);
             root.lastError = "";
+            loginWatch.stop();
             root.refreshChats();
         } else if (name === "auth.disconnected") {
             root.loggedIn = false;
             root.authState = "disconnected";
             root.qrPng = "";
             root.lastError = String(data.reason || "");
+            loginWatch.stop();
         } else if (name === "auth.error") {
             root.lastError = String(data.message || "auth error");
+            // Um erro de pareamento encerra a tentativa: sai de "connecting"
+            // para a UI mostrar o erro com a ação de tentar novamente.
+            root.qrPng = "";
+            loginWatch.stop();
+            if (!root.loggedIn && root.authState !== "connected")
+                root.authState = "needs_pairing";
         } else if (name === "connection.updated") {
             root.connectionState = String(data.state || "disconnected");
             if (data.state === "connected" && root.authState === "connecting")
@@ -670,22 +696,39 @@ Singleton {
         root.qrPng = "";
         root.lastError = "";
         root.authState = "connecting";
-        root._send("auth.start", null, function (res, err) {
-            if (err) {
-                root.lastError = root._errorMessage(err);
-                root.authState = "needs_pairing";
-            }
+        loginWatch.stop();
+        // Limpa qualquer pareamento anterior antes de pedir um novo: um QR que
+        // expirou por timeout ou um login cujo dono IPC sumiu deixariam o
+        // daemon respondendo login_in_progress. no_login_active é esperado e
+        // ignorado; o erro de transporte também não impede a nova tentativa.
+        root._send("auth.cancel", null, function () {
+            root._send("auth.start", null, function (res, err) {
+                if (err) {
+                    loginWatch.stop();
+                    root.lastError = root._errorMessage(err) || "falha ao iniciar o pareamento";
+                    root.authState = "needs_pairing";
+                    return;
+                }
+                // A resposta chegou; se nenhum auth.qr vier, o watchdog fecha
+                // a UI em estado de falha com a ação de tentar novamente.
+                loginWatch.restart();
+            });
         });
     }
 
     function cancelLogin() {
+        loginWatch.stop();
         root._send("auth.cancel", null, function (res, err) {
-            if (err)
+            if (err) {
                 root.lastError = root._errorMessage(err);
+                if (!root.loggedIn && root.authState !== "connected")
+                    root.authState = "needs_pairing";
+            }
         });
     }
 
     function logout() {
+        loginWatch.stop();
         root._send("auth.logout", null, function (res, err) {
             if (err) {
                 root.lastError = root._errorMessage(err);

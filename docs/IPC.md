@@ -243,11 +243,17 @@ Response (aceito):
 ```
 
 Erros: se já existe sessão ou um login já está em andamento, responde
-`invalid_request` (ex.: `whatsapp: already logged in`).
+`invalid_request` (ex.: `whatsapp: already logged in`). Toda recusa é registrada
+no journal em INFO com `reason=...` (ex.: `login already active`,
+`device already paired`), sem segredos.
 
 O login em andamento é abortável por `auth.cancel` (abaixo), `auth.logout` ou
-pelo shutdown do daemon; whatsmeow não fecha o canal de QR sozinho, então o
-daemon mantém um contexto cancelável por login.
+pelo shutdown do daemon; whatsmeow não fecha o canal de QR em todos os
+desfechos (ex.: `err-scanned-without-multidevice`), então o daemon mantém um
+contexto cancelável por login e encerra a tentativa assim que ela vira terminal.
+Assim, **timeout, cancel e erro liberam `auth.start` para uma nova tentativa**,
+que emite um novo `auth.qr`; uma tentativa ainda ativa continua respondendo
+`login_in_progress`.
 
 ### `auth.cancel` (fase 2.5)
 

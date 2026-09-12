@@ -33,21 +33,31 @@ const CodeNoLoginActive = "no_login_active"
 
 // StartLogin begins the QR pairing flow.
 //
-// It fails when a session already exists. GetQRChannel MUST be called before
-// Connect: it installs the handler that captures the codes from the upcoming
-// connection. The raw code never reaches the logs — only the "qr emitted" line.
+// It fails when a session already exists or another login is genuinely running.
+// GetQRChannel MUST be called before Connect: it installs the handler that
+// captures the codes from the upcoming connection. The raw code never reaches
+// the logs — only the "qr emitted" line.
+//
+// Every refusal is logged at INFO (without secrets) so a stuck "Gerando
+// código…" in the UI can be explained by the journal alone.
 func (s *Service) StartLogin(ctx context.Context) error {
 	s.loginMu.Lock()
 	if s.loginActive {
 		s.loginMu.Unlock()
+		s.logger.Info("whatsapp: auth.start refused",
+			slog.String("reason", "login already active"))
 		return ErrLoginInProgress
 	}
 	if d := s.currentDevice(); d != nil && d.ID != nil {
 		s.loginMu.Unlock()
+		s.logger.Info("whatsapp: auth.start refused",
+			slog.String("reason", "device already paired"))
 		return ErrAlreadyLoggedIn
 	}
 	if c := s.currentClient(); c != nil && c.IsLoggedIn() {
 		s.loginMu.Unlock()
+		s.logger.Info("whatsapp: auth.start refused",
+			slog.String("reason", "client already logged in"))
 		return ErrAlreadyLoggedIn
 	}
 	// After a logout the old device is marked deleted and must not be reused;
@@ -55,48 +65,68 @@ func (s *Service) StartLogin(ctx context.Context) error {
 	needRebuild := s.currentDevice() == nil || s.currentDevice().Deleted
 	// The login context is derived from the service context, not from the
 	// request context: the QR channel must outlive the IPC handler invocation,
-	// yet still be canceled by auth.cancel/Logout/Close. whatsmeow never closes
-	// this channel on an expected disconnect, so cancellation is the only way
-	// to stop consumeQRCodes.
+	// yet still be canceled by auth.cancel/Logout/Close. whatsmeow does not
+	// always close this channel (e.g. err-scanned-without-multidevice), so
+	// cancellation is the only reliable way to stop consumeQRCodes.
 	loginCtx, loginCancel := context.WithCancel(s.ctx)
+	s.loginGen++
+	gen := s.loginGen
 	s.loginActive = true
 	s.loginCancel = loginCancel
 	s.loginMu.Unlock()
 
 	if needRebuild {
 		if err := s.rebuildClient(ctx); err != nil {
-			s.stopLogin()
+			s.stopLoginGen(gen)
 			return err
 		}
 	}
 
 	client := s.currentClient()
 	if client == nil {
-		s.stopLogin()
+		s.stopLoginGen(gen)
 		return ErrNotPaired
 	}
+	// A previous attempt (timeout/cancel/error) can leave the socket up:
+	// whatsmeow's GetQRChannel refuses to run on a connected client, which
+	// would make the retry fail with "open qr channel". Drop it first.
+	if client.IsConnected() {
+		client.Disconnect()
+	}
 	qrChan, err := client.GetQRChannel(loginCtx)
+	if errors.Is(err, whatsmeow.ErrQRAlreadyConnected) {
+		// Lost the race with whatsmeow's own disconnect; retry once.
+		client.Disconnect()
+		qrChan, err = client.GetQRChannel(loginCtx)
+	}
 	if err != nil {
-		s.stopLogin()
+		s.stopLoginGen(gen)
+		if errors.Is(err, whatsmeow.ErrQRStoreContainsID) {
+			s.logger.Info("whatsapp: auth.start refused",
+				slog.String("reason", "device already paired"))
+			return ErrAlreadyLoggedIn
+		}
 		return fmt.Errorf("whatsapp: open qr channel: %w", err)
 	}
 
 	s.setState(StateConnecting, "qr login started")
 	if err := client.Connect(); err != nil {
-		s.stopLogin()
+		s.stopLoginGen(gen)
 		return fmt.Errorf("whatsapp: connect for qr login: %w", err)
 	}
-	if !s.goTracked(func() { s.consumeQRCodes(loginCtx, qrChan) }) {
-		s.stopLogin()
+	if !s.goTracked(func() { s.consumeQRCodes(gen, loginCtx, qrChan) }) {
+		s.stopLoginGen(gen)
 		return errServiceClosing
 	}
 	return nil
 }
 
 // consumeQRCodes translates the whatsmeow QR channel into IPC events until the
-// channel closes or the login context is canceled.
-func (s *Service) consumeQRCodes(ctx context.Context, qrChan <-chan whatsmeow.QRChannelItem) {
-	defer s.stopLogin()
+// channel closes, the login context is canceled or a terminal item ends the
+// pairing. It carries the generation it was started with so that its deferred
+// cleanup can never clear a newer login (see stopLoginGen).
+func (s *Service) consumeQRCodes(gen uint64, ctx context.Context, qrChan <-chan whatsmeow.QRChannelItem) {
+	defer s.stopLoginGen(gen)
 	for {
 		select {
 		case <-ctx.Done():
@@ -112,13 +142,20 @@ func (s *Service) consumeQRCodes(ctx context.Context, qrChan <-chan whatsmeow.QR
 			if ctx.Err() != nil {
 				return
 			}
-			s.handleQRItem(item)
+			if s.handleQRItem(item) {
+				return
+			}
 		}
 	}
 }
 
-// handleQRItem classifies a single QR channel item.
-func (s *Service) handleQRItem(item whatsmeow.QRChannelItem) {
+// handleQRItem classifies a single QR channel item and reports whether it
+// terminates the login. Terminal outcomes stop the login eagerly instead of
+// trusting the whatsmeow channel to close: some events (e.g.
+// err-scanned-without-multidevice) are delivered without closing the channel,
+// which previously left loginActive set and made every later auth.start return
+// login_in_progress forever.
+func (s *Service) handleQRItem(item whatsmeow.QRChannelItem) bool {
 	switch item.Event {
 	case whatsmeow.QRChannelEventCode:
 		timeout := int(item.Timeout / time.Second)
@@ -138,35 +175,63 @@ func (s *Service) handleQRItem(item whatsmeow.QRChannelItem) {
 		// Never log item.Code.
 		s.logger.Info("whatsapp: qr emitted", slog.Int("timeout_seconds", timeout))
 		s.emit(EventAuthQR, data)
+		return false
 	case "success":
 		s.logger.Info("whatsapp: qr pairing succeeded")
 		if s.setState(StateConnected, "pairing success") {
 			s.emit(EventAuthConnected, s.connectedData())
 		}
 		s.sendPresence()
+		return true
 	case whatsmeow.QRChannelEventError:
 		s.logger.Warn("whatsapp: qr pairing error",
 			slog.String("error", qrErrorMessage(item.Error)))
 		s.emit(EventAuthError, map[string]any{"message": qrErrorMessage(item.Error)})
+		return true
 	case "timeout":
 		s.logger.Warn("whatsapp: qr pairing timed out")
 		s.emit(EventAuthError, map[string]any{"message": "pairing timed out"})
+		return true
 	case "err-client-outdated":
 		s.setState(StateOutdated, "client outdated during pairing")
 		s.emit(EventAuthError, map[string]any{"message": "client outdated; update the daemon"})
+		return true
 	case "err-scanned-without-multidevice":
 		s.emit(EventAuthError, map[string]any{
 			"message": "QR scanned but multi-device is disabled on the phone",
 		})
+		return true
 	default:
 		s.logger.Debug("whatsapp: qr channel event", slog.String("event", item.Event))
+		return false
 	}
 }
 
 // stopLogin clears the active-login flag and cancels the in-flight login
-// context, if any. Safe to call more than once and from any goroutine.
+// context, if any. It is unconditional and bumps the login generation so an
+// in-flight consumeQRCodes cannot later undo a newer login. Safe to call more
+// than once and from any goroutine.
 func (s *Service) stopLogin() {
 	s.loginMu.Lock()
+	s.loginGen++
+	cancel := s.loginCancel
+	s.loginCancel = nil
+	s.loginActive = false
+	s.loginMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// stopLoginGen is the generation-guarded variant used by consumeQRCodes: it
+// only clears/cancels the login it was created for. A stale consumer whose
+// terminal item arrived after a newer auth.start is a no-op.
+func (s *Service) stopLoginGen(gen uint64) {
+	s.loginMu.Lock()
+	if s.loginGen != gen {
+		s.loginMu.Unlock()
+		return
+	}
 	cancel := s.loginCancel
 	s.loginCancel = nil
 	s.loginActive = false
@@ -181,6 +246,7 @@ func (s *Service) stopLogin() {
 func (s *Service) CancelLogin() error {
 	s.loginMu.Lock()
 	active := s.loginActive
+	s.loginGen++
 	cancel := s.loginCancel
 	s.loginCancel = nil
 	s.loginActive = false
