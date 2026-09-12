@@ -69,7 +69,7 @@ Todos os blocos são envolvidos por marcadores e aplicados de forma idempotente
 | `modules/drawers/Panels.qml` | `patch-caelestia-whatsapp.py` | `import qs.extras.whatsapp as ExtrasWhatsApp` (marcador); `readonly property alias whatsapp: whatsapp`; instância `ExtrasWhatsApp.Drawer { id: whatsapp; screen: root.screen; screenState: root.screenState; anchors.top/bottom/left: parent.* }` antes do `Sidebar.Wrapper`. |
 | `modules/drawers/ContentWindow.qml` | `patch-caelestia-whatsapp.py` | `PanelBg { id: whatsappBg; panel: panels.whatsapp; deformAmount: 0.03; implicitHeight: panel.height * (1 / rawDeformMatrix.m22) + 2 }` junto aos demais; `whatsapp.transform: Matrix4x4 { matrix: whatsappBg.deformMatrix }` **dentro** do bloco `Panels`; `\|\| panels.whatsapp.visible` no binding de `WlrLayershell.keyboardFocus`. |
 | `modules/drawers/Regions.qml` | `patch-caelestia-whatsapp.py` | `R { panel: root.panels.whatsapp; y: 0; height: panel.height * (1 - panel.offsetScale) + root.borderThickness }` (região de input full-height). |
-| `modules/drawers/Interactions.qml` | `patch-caelestia-whatsapp.py` | Sensor de borda à **direita da barra** + dwell de 450 ms para abrir e timer de 300 ms para fechar; supressão quando `popouts.hasCurrent \|\| pressed \|\| fullscreen`; fecha ao perder o rato (`onContainsMouseChanged`) e em `onFullscreenChanged`. |
+| `modules/drawers/Interactions.qml` | `patch-caelestia-whatsapp.py` | **Sem** abertura/fecho por hover (o antigo sensor de borda + timers `waDwell`/`waHide` + close em `onContainsMouseChanged` são removidos). O `onPressed` mantém o `dragStart` e fecha o painel ao clicar **fora** quando `panels.whatsapp.opened`; `onFullscreenChanged` fecha em fullscreen. |
 | `modules/bar/Bar.qml` | `patch-caelestia-whatsapp-bar.py` | `import qs.extras.whatsapp` + `import qs.extras.whatsapp as ExtrasWhatsApp`; `DelegateChoice { roleValue: "whatsapp"; delegate: EntryWrapper { WhatsAppBarItem { bar: root; objectName: "taskbarWhatsApp" } } }` no fim do `DelegateChooser`. |
 | `~/.config/caelestia/shell.json` | `patch-caelestia-whatsapp-bar.py` | entrada `{"id": "whatsapp", "enabled": true}` em `bar.entries` (dict ou list), se o ficheiro existir. |
 | `modules/nexus/PageRegistry.qml` | `patch-caelestia-whatsapp-nexus.py` | `import qs.extras.whatsapp as ExtrasWhatsApp`; página `{ label: qsTr("WhatsApp"), icon: "chat", description: qsTr("Conexão, notificações e conta"), category: "shell" }` **no fim** da lista `pages`. |
@@ -133,17 +133,28 @@ próprio** — o blob/aro é desenhado pelo core (via `whatsappBg`).
   pesado só é instanciado quando necessário).
 - `Shortcut Escape { enabled: visible; onActivated: close() }`.
 
-### Sensor lateral + `WhatsAppState`
+### Abertura e fecho (Fase 5)
 
-O patch de `Interactions.qml` define a faixa sensível à **direita da barra**:
+O `Drawer` **não** abre nem fecha por hover. A abertura é sempre explícita
+(ação do usuário):
 
-```
-x ∈ [bar.implicitWidth - 2, bar.implicitWidth + waEdgeW]
-```
+- clique no item do WhatsApp na barra (`WhatsAppBarItem`);
+- atalho global `caelestia:whatsapp`;
+- IPC `caelestia shell whatsapp show` (ou `toggle`).
 
-Quando o rato entra na faixa (`waEdgeHovered`), um timer de dwell de 450 ms
-abre o painel; ao sair, um timer de 300 ms fecha-o. O sensor é suprimido se
-`popouts.hasCurrent`, `pressed` ou `fullscreen`.
+O fecho acontece apenas em:
+
+- **clique fora** do painel — o patch de `Interactions.qml` troca o `onPressed`
+  por um handler que preserva o `dragStart` e, quando `panels.whatsapp.opened` e
+  o clique está fora (`!root.inLeftPanel(root.panels.whatsapp, event.x, event.y)`),
+  chama `panels.whatsapp.close()`;
+- **fullscreen** (`onFullscreenChanged`);
+- **`Esc`** (tratado no próprio `Drawer`).
+
+Não há sensor de borda nem timers de dwell/hide. Em árvores já instaladas, o
+patch **remove** automaticamente o bloco antigo (sensor `waEdgeW` +
+`waDwell`/`waHide` + close em `onContainsMouseChanged`) e o substitui pelo novo,
+de forma idempotente.
 
 O singleton `WhatsAppState` permite desacoplar o pedido de abrir/fechar de
 outros pontos da UI (barra, atalhos, IPC):
@@ -255,8 +266,9 @@ Reiniciar o shell para carregar o módulo:
 caelestia shell -k && caelestia shell -d
 ```
 
-Abrir/fechar: hover à direita da barra (dwell), clique no badge da barra, o
-atalho global `caelestia:whatsapp`, ou o IPC `caelestia shell whatsapp toggle`.
+Abrir: clique no badge da barra, o atalho global `caelestia:whatsapp`, ou o IPC
+`caelestia shell whatsapp show|toggle`. Fechar: clique fora do painel,
+fullscreen, ou `Esc`.
 
 ## 8. Desinstalar / rollback
 

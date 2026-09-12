@@ -7,9 +7,14 @@
 //   property real offsetScale       // 0 = visível, 1 = oculto (animado)
 //   open() / close() / scheduleHide()
 //
+// Abertura/fecho: apenas por ação explícita (clique no item da barra, atalho
+// `caelestia:whatsapp`, IPC `whatsapp show/hide/toggle`) e os fechos do core
+// (Esc nas teclas e fullscreen). `scheduleHide()` é um no-op — não fecha por
+// hover nem por perda de foco (isso atrapalhava a digitação).
+//
 // Sem fundo próprio: o blob do core (PanelBg/BlobGroup) desenha atrás e o aro
-// funde as bordas. Aqui vivemos apenas o conteúdo (WhatsAppPanel), a animação
-// de entrada/saída e o fecho por Esc.
+// funde as bordas. Aqui vivemos apenas o conteúdo (WhatsAppPanel) e a animação
+// de entrada/saída.
 
 pragma ComponentBehavior: Bound
 
@@ -67,15 +72,14 @@ Item {
     }
 
     function close(): void {
-        hideTimer.stop();
         root.opened = false;
         WhatsAppState.visible = false;
     }
 
+    // Contrato congelado: o patch do core pode chamar `scheduleHide()`. Desde a
+    // mudança para "abrir/fechar só por ação explícita", é um no-op — o drawer
+    // não fecha mais por hover/perda de foco (só close()/Esc/fullscreen/IPC).
     function scheduleHide(): void {
-        if (!root.opened)
-            return;
-        hideTimer.restart();
     }
 
     function toggle(): void {
@@ -83,15 +87,6 @@ Item {
             root.close();
         else
             root.open();
-    }
-
-    Timer {
-        id: hideTimer
-
-        // Atraso configurável no JSON próprio do módulo.
-        interval: Math.max(50, WhatsAppSettings.getInt("hideDelay", 300))
-        repeat: false
-        onTriggered: root.close()
     }
 
     // Pedidos globais só são atendidos pelo monitor focado.

@@ -30,14 +30,16 @@ Pontos do patch (contrato congelado em
        height: panel.height * (1 - panel.offsetScale) + root.borderThickness }`
        (marcador).
 4. modules/drawers/Interactions.qml
-     * sensor de borda à DIREITA da barra (faixa
-       `x ∈ [bar.implicitWidth - 2, bar.implicitWidth + waEdgeW]`) + dwell de
-       450 ms para abrir e timer de 300 ms para fechar, com supressão quando
-       `popouts.hasCurrent || pressed` (e `fullscreen`);
-     * fecha em `onContainsMouseChanged` (ao perder o rato) e em
-       `onFullscreenChanged`.
-     Adaptado aos nomes/estrutura reais do ficheiro (o spec referia
-     `root.lastX/lastY`; o core usa `root.mouseX/mouseY`).
+     * ABERTURA só por ação explícita (item da barra, atalho
+       `caelestia:whatsapp` ou IPC `whatsapp toggle|show`) — sem sensor de
+       borda, sem timers de dwell e sem close ao perder o rato;
+     * FECHO ao clicar FORA do painel (`onPressed`, quando
+       `panels.whatsapp.opened`), em `onFullscreenChanged` (fullscreen) e por
+       `Esc` (tratado no próprio Drawer);
+     * é upgrade-safe: se a árvore instalada ainda tiver o bloco antigo
+       (sensor `waEdgeW` + timers `waDwell`/`waHide` + close em
+       `onContainsMouseChanged`), este é REMOVIDO e substituído pelo novo,
+       mantendo a idempotência por conteúdo/marcadores.
 
 Todas as edições usam marcadores `// >>> caelestia-extras whatsapp` /
 `// <<< caelestia-extras whatsapp` e são idempotentes (verificadas pelo
@@ -356,110 +358,91 @@ def patch_regions(path: str, dry: bool) -> bool:
 
 # --------------------------------------------------------------------------- #
 # 4. Interactions.qml
+#
+# Revisão de comportamento: o drawer do WhatsApp ABRE apenas por ação explícita
+# (item da barra, atalho `caelestia:whatsapp` ou IPC toggle/show) e FECHA por
+# clique FORA do painel, fullscreen ou Esc. Não existe mais abertura/fecho por
+# hover. O patch é upgrade-safe: o bloco antigo (sensor `waEdgeW` + timers
+# `waDwell`/`waHide` + close em `onContainsMouseChanged`) é removido quando
+# presente, e os marcadores são reaproveitados pelo novo `onFullscreenChanged`.
 # --------------------------------------------------------------------------- #
-WA_PROPS = wrap(
-    """\
-    readonly property real waEdgeW: Math.max(4, Tokens.padding.small)
-    property bool waEdgeHovered: false
-
-    Timer {
-        id: waDwell
-
-        interval: 450
-        repeat: false
-        onTriggered: if (root.waEdgeHovered)
-            root.panels.whatsapp.open()
-    }
-
-    Timer {
-        id: waHide
-
-        interval: 300
-        repeat: false
-        onTriggered: if (!root.inLeftPanel(root.panels.whatsapp, root.mouseX, root.mouseY) && !root.waEdgeHovered)
-            root.panels.whatsapp.close()
-    }""",
-    indent="    ",
+# Bloco marcado do WhatsApp (qualquer um dos antigos ou o novo).
+MARK_BLOCK_RE = re.compile(
+    r"^[ \t]*// >>> caelestia-extras whatsapp[ \t]*\n"
+    r".*?"
+    r"^[ \t]*// <<< caelestia-extras whatsapp[ \t]*\n?",
+    re.M | re.S,
 )
 
-WA_FULLSCREEN = wrap(
+WA_FULLSCREEN_NEW = wrap(
     """\
     onFullscreenChanged: {
-        if (fullscreen) {
-            waDwell.stop();
-            waHide.stop();
+        if (fullscreen)
             root.panels.whatsapp.close();
-        }
     }""",
     indent="    ",
 )
 
-WA_SENSOR = wrap(
-    """\
-        const onEdge = x >= bar.implicitWidth - 2 && x <= bar.implicitWidth + waEdgeW;
-        const inWa = inLeftPanel(panels.whatsapp, x, y);
-        waEdgeHovered = onEdge && !pressed && !popouts.hasCurrent && !fullscreen;
-        if (waEdgeHovered)
-            waDwell.restart();
-        else
-            waDwell.stop();
-        if (inWa || onEdge)
-            waHide.stop();
-        else if (panels.whatsapp.visible)
-            waHide.restart();""",
-    indent="        ",
+# Linha original do core (sem o patch) do handler de press. A primeira linha da
+# substituição NÃO leva indentação (a linha-âncora já a fornece).
+WA_ONPRESS_OLD = "onPressed: event => dragStart = Qt.point(event.x, event.y)"
+WA_ONPRESS_NEW = (
+    "onPressed: event => {\n"
+    "        dragStart = Qt.point(event.x, event.y);\n"
+    "        // >>> caelestia-extras whatsapp\n"
+    "        if (root.panels.whatsapp.opened && !root.inLeftPanel(root.panels.whatsapp, event.x, event.y))\n"
+    "            root.panels.whatsapp.close();\n"
+    "        // <<< caelestia-extras whatsapp\n"
+    "    }"
 )
+WA_ONPRESS_SENTINEL = "root.panels.whatsapp.opened && !root.inLeftPanel(root.panels.whatsapp, event.x, event.y)"
 
-WA_CONTAINS = wrap(
-    """\
-            waHide.stop();
-            waDwell.stop();
-            root.panels.whatsapp.close();""",
-    indent="            ",
-)
+
+def _classify_wa_block(body: str) -> str:
+    """Classifica um bloco marcado do WhatsApp em `keep`, `fullscreen` ou `remove`."""
+    if "root.panels.whatsapp.opened" in body:
+        return "keep"
+    if "onFullscreenChanged" in body:
+        return "fullscreen"
+    return "remove"
 
 
 def patch_interactions(path: str, dry: bool) -> bool:
     original = read(path)
     text = original
 
-    # Idempotência por conteúdo: o sensor define `waEdgeW`. Aplicamos tudo de
-    # uma vez e escrevemos uma única vez, pelo que não há estados parciais.
-    if "waEdgeW" in text:
-        print("Interactions.qml: já patchado, nada a fazer")
-        return False
+    # 4a. Upgrade-safe: percorre TODOS os blocos marcados do WhatsApp e
+    #     descarta os antigos (sensor/timers/close-por-hover), preservando o
+    #     novo `onPressed` e substituindo o `onFullscreenChanged` (que antes
+    #     referenciava `waDwell`/`waHide`).
+    pieces: list[str] = []
+    last = 0
+    for m in MARK_BLOCK_RE.finditer(text):
+        pieces.append(text[last:m.start()])
+        kind = _classify_wa_block(m.group(0))
+        if kind == "keep":
+            pieces.append(m.group(0))
+        elif kind == "fullscreen":
+            pieces.append(WA_FULLSCREEN_NEW)
+        # kind == "remove": não reanexa (remove o bloco inteiro)
+        last = m.end()
+    pieces.append(text[last:])
+    text = "".join(pieces)
 
-    changed = False
+    # 4b. Garante o fecho em fullscreen (instalação nova, sem blocos prévios).
+    if "onFullscreenChanged" not in text:
+        text, ok = insert_after_line(text, r"hoverEnabled\s*:\s*true", WA_FULLSCREEN_NEW)
+        if not ok:
+            print("AVISO: 'hoverEnabled: true' não encontrado em Interactions.qml; fullscreen do WhatsApp ignorado")
 
-    # 4a. Propriedades + timers (após os flags de shortcut).
-    text, ok = insert_after_line(text, r"property\s+bool\s+utilitiesShortcutActive", WA_PROPS)
-    if ok:
-        changed = True
-    else:
-        print("AVISO: 'utilitiesShortcutActive' não encontrado em Interactions.qml; props/timers do WhatsApp ignorados")
+    # 4c. Fechar ao clicar FORA do painel, sem quebrar o `dragStart` existente.
+    if WA_ONPRESS_SENTINEL not in text:
+        text, ok = replace_once(text, WA_ONPRESS_OLD, WA_ONPRESS_NEW)
+        if not ok:
+            print("AVISO: 'onPressed: event => dragStart = ...' não encontrado em Interactions.qml; "
+                  "fecho ao clicar fora ignorado")
 
-    # 4b. Fechar em fullscreen.
-    text, ok = insert_after_line(text, r"hoverEnabled\s*:\s*true", WA_FULLSCREEN)
-    if ok:
-        changed = True
-    else:
-        print("AVISO: 'hoverEnabled: true' não encontrado em Interactions.qml; fullscreen do WhatsApp ignorado")
-
-    # 4c. Sensor de borda dentro de onPositionChanged (após x/y).
-    text, ok = insert_after_line(text, r"const\s+y\s*=\s*event\.y;", WA_SENSOR)
-    if ok:
-        changed = True
-    else:
-        print("AVISO: 'const y = event.y;' não encontrado em Interactions.qml; sensor do WhatsApp ignorado")
-
-    # 4d. Fechar ao perder o rato.
-    text, ok = insert_after_line(text, r"if\s*\(!containsMouse\)\s*\{", WA_CONTAINS)
-    if ok:
-        changed = True
-    else:
-        print("AVISO: bloco 'if (!containsMouse)' não encontrado em Interactions.qml; fecho do WhatsApp ignorado")
-
-    if not changed:
+    if text == original:
         print("Interactions.qml: já patchado, nada a fazer")
         return False
     if dry:

@@ -18,6 +18,8 @@ Item {
     id: root
 
     property var screen
+    // Referência ao Drawer (injetada pelo Loader). Mantida para uso futuro; o
+    // painel não a usa mais para fechar sozinho (sem auto-close por hover).
     property var drawer
 
     // 0 = login, 1 = lista, 2 = conversa.
@@ -48,16 +50,8 @@ Item {
         return "Offline";
     }
 
-    // Fecho após o rato sair (complementa o sensor do core).
-    HoverHandler {
-        id: hover
-
-        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-        onHoveredChanged: {
-            if (!hovered && root.drawer)
-                root.drawer.scheduleHide();
-        }
-    }
+    // O drawer abre/fecha só por ação explícita (barra/atalho/IPC, Esc e
+    // fullscreen do core). Não há fecho por hover/perda de foco.
 
     ColumnLayout {
         anchors.fill: parent
