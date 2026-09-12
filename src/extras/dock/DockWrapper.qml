@@ -173,8 +173,6 @@ Item {
     readonly property bool revealed: !root.autohide || panel.editMode || root.sensorHovered || panel.hovered || autohideTimer.running
 
     onSensorHoveredChanged: root.updateAutohideTimer()
-    onAutohideChanged: root.updateAutohideTimer()
-    onShownChanged: root.updateAutohideTimer()
 
     // ---- Visibilidade ---------------------------------------------------
     readonly property bool active: root.dockEnabled && (root.alwaysVisible || panel.hasApps || panel.editMode)
@@ -209,9 +207,15 @@ Item {
 
     onOffsetScaleChanged: root.publishState()
     onFullscreenChanged: root.publishState()
-    onShownChanged: root.publishState()
+    onShownChanged: {
+        root.updateAutohideTimer();
+        root.publishState();
+    }
     onExclusiveChanged: root.publishState()
-    onAutohideChanged: root.publishState()
+    onAutohideChanged: {
+        root.updateAutohideTimer();
+        root.publishState();
+    }
     Component.onCompleted: root.publishState()
 
     // ---- Conteúdo -------------------------------------------------------

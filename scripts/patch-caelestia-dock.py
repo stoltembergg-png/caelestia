@@ -13,7 +13,7 @@ core (L2)"):
 2. modules/drawers/ContentWindow.qml
      * `PanelBg { id: dockBg; panel: panels.dock; deformAmount: 0.1 }` (marcador,
        junto aos demais PanelBg do blobGroup);
-     * `panels.dock.transform: Matrix4x4 { matrix: dockBg.deformMatrix }` (marcador,
+     * `dock.transform: Matrix4x4 { matrix: dockBg.deformMatrix }` (marcador,
        junto ao bloco de wiring dos painéis).
 3. modules/drawers/Regions.qml
      * `R { panel: root.panels.dock; y: root.win.height - height;
@@ -247,7 +247,7 @@ DOCK_BG = wrap(
 
 DOCK_TRANSFORM = wrap(
     """\
-            panels.dock.transform: Matrix4x4 {
+            dock.transform: Matrix4x4 {
                 matrix: dockBg.deformMatrix
             }""",
     indent="            ",
@@ -268,7 +268,7 @@ def patch_content_window(path: str, dry: bool) -> bool:
             print("AVISO: bloco 'popoutBg' não encontrado em ContentWindow.qml; PanelBg da dock ignorado")
 
     # 2b. Wiring do transform, junto aos demais (após o transform dos popouts).
-    if "panels.dock.transform" not in text:
+    if "dock.transform" not in text:
         text, ok = insert_after_enclosing_block(text, r"matrix\s*:\s*popoutBg\.deformMatrix", DOCK_TRANSFORM)
         if ok:
             changed = True

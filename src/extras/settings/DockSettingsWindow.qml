@@ -9,6 +9,7 @@ import QtQuick
 import Quickshell
 import Caelestia.Config
 import qs.modules.nexus
+import qs.services
 
 FloatingWindow {
     id: win
