@@ -1,7 +1,8 @@
 # BUILD — compilar, testar e rodar o daemon e a CLI
 
-Este documento cobre o backend Go (`daemon/`) e a CLI `cwctl` (`cli/cwctl/`,
-um **módulo Go separado**). O shell (QML) e o systemd são passos posteriores.
+Este documento cobre o backend Go (`daemon/`), a CLI `cwctl` (`cli/cwctl/`,
+um **módulo Go separado**) e a instalação como serviço de usuário (systemd). O
+shell (QML) é um passo posterior.
 
 ## Toolchain
 
@@ -123,6 +124,63 @@ Comportamento:
   `github.com/mdp/qrterminal/v3`) e bloqueia até `auth.connected` ou o
   timeout; **não** pareia sozinho. Interrompa com `Ctrl+C`.
 - A CLI nunca lê/grava o banco nem vê credenciais: só o socket `0600`.
+
+## Instalar como serviço de usuário
+
+O `scripts/install.sh` é um instalador **local, idempotente e sem `sudo`**:
+compila o daemon e a CLI para `~/.local/bin/`, cria o diretório de dados
+`~/.local/share/caelestia-whatsapp/` (`0700`) e instala o unit em
+`~/.config/systemd/user/caelestia-whatsapp.service`, rodando
+`systemctl --user daemon-reload` ao final. Ele **não** habilita nem inicia o
+serviço automaticamente — imprime os comandos para você decidir.
+
+```sh
+cd ~/caelestia-whatsapp
+scripts/install.sh
+```
+
+Se `~/.local/bin` não estiver no `PATH`, exporte antes de usar `cwctl`:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Em HOME alternativo (testes/CI), a instalação fica contida no HOME informado:
+`HOME=/tmp/cw-install-test scripts/install.sh` compila, copia binários e
+instala o unit sob `/tmp/cw-install-test`, usando o cache de módulos do home
+real para não baixar as dependências de novo.
+
+### Habilitar, iniciar e verificar
+
+```sh
+systemctl --user enable --now caelestia-whatsapp.service
+
+systemctl --user status caelestia-whatsapp.service
+journalctl --user -u caelestia-whatsapp.service -f
+
+cwctl status                      # state: needs_pairing (antes do login)
+cwctl login                       # imprime o QR e aguarda o pareamento
+```
+
+A unit usa `ExecStart=%h/.local/bin/caelestia-whatsappd`, `Type=simple`,
+`Restart=on-failure`, `RestartSec=2` e `WantedBy=default.target`; **não** há
+segredos em `Environment=` (a sessão vive no SQLite `0600`). O daemon roda sem
+o shell e o frontend QML reconecta sozinho se ele reiniciar.
+
+### Socket activation (opcional/experimental)
+
+`systemd/caelestia-whatsapp.socket` (`ListenStream=%t/caelestia-whatsapp.sock`,
+`SocketMode=0600`, `Accept=no`, `WantedBy=sockets.target`) está no repositório
+apenas como referência. O daemon **atual não implementa** socket activation:
+ele não lê o FD passado pelo systemd (`go-systemd/v22/activation`) e ainda
+cria/remove o socket por conta própria, o que conflita com o unit. Portanto:
+
+- **Modo padrão e suportado:** serviço ativo (`caelestia-whatsapp.service`).
+- **Não** habilite o `.socket` junto com o `.service`.
+- O `.socket` vira suportado quando o daemon adotar `activation.Listeners()`.
+
+Veja [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) para falhas comuns (socket,
+`not_paired`, QR, 405, ban, logs, reset de sessão).
 
 ## Teste manual do fluxo completo (smoke)
 

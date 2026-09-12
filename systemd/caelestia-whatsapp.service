@@ -1,0 +1,20 @@
+[Unit]
+Description=WhatsApp daemon (whatsmeow) para o Caelestia
+# Roda independente do shell; o frontend QML reconecta sozinho se o daemon
+# reiniciar. O enable é one-shot (o autostart do Hyprland pode dar apenas
+# `systemctl --user start caelestia-whatsapp`).
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/caelestia-whatsappd
+Restart=on-failure
+RestartSec=2
+
+# Sem segredos em Environment/EnvironmentFile: a sessão do WhatsApp vive no
+# SQLite 0600 em ~/.local/share/caelestia-whatsapp/whatsapp.db e nunca é
+# exportada. O socket fica em $XDG_RUNTIME_DIR (0600), criado pelo daemon.
+# Diretórios (XDG_DATA_HOME/XDG_RUNTIME_DIR) são fornecidos pelo user manager.
+
+[Install]
+WantedBy=default.target
