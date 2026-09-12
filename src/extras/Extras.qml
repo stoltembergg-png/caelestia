@@ -99,6 +99,14 @@ Item {
         function openDockSettings(): void {
             root.openDockSettings();
         }
+
+        function toggleDockSettings(): void {
+            root.toggleDockSettings();
+        }
+
+        function closeDockSettings(): void {
+            dockSettings.close();
+        }
     }
 
     CustomShortcut {
