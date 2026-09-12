@@ -24,7 +24,17 @@ Item {
                 "elementSize": 44,
                 "floating": false,
                 "editing": false,
-                "apps": []
+                "apps": [],
+                "alwaysVisible": true,
+                "showOnFullscreen": false,
+                "animations": true,
+                "exclusive": true,
+                "autohide": false,
+                "autohideTimeout": 1000,
+                "opacity": 100,
+                "hoverScale": 120,
+                "cascadeScale": true,
+                "sensorHeight": 6
             },
             "bar": {
                 "position": "top",

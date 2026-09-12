@@ -9,4 +9,5 @@ singleton OsdController 1.0 compat/OsdController.qml
 singleton FloatingController 1.0 compat/FloatingController.qml
 singleton NotesManager 1.0 compat/NotesManager.qml
 singleton NoLimits 1.0 nolimits/NoLimits.qml
+singleton DockState 1.0 dock/DockState.qml
 Extras 1.0 Extras.qml

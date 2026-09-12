@@ -1,0 +1,3 @@
+module qs.extras.settings
+DockPage 1.0 DockPage.qml
+DockSettingsWindow 1.0 DockSettingsWindow.qml

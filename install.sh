@@ -85,12 +85,14 @@ else
   echo "AVISO: scripts/qs ausente; instale depois manualmente (ver docs/QUICKSHELL-WEBVIEW.md)." >&2
 fi
 
-# 5. patch opcional da barra + migração (melhor esforço)
+# 5. patches opcionais do core (barra, dock, Nexus) + migração (melhor esforço)
 if command -v python3 >/dev/null 2>&1; then
-  python3 "$REPO_DIR/scripts/patch-caelestia-bar.py" "$DEST_ROOT" \
-    || echo "AVISO: patch da barra não aplicado; rode depois: python3 scripts/patch-caelestia-bar.py \"$DEST_ROOT\"" >&2
+  for p in bar dock nexus; do
+    python3 "$REPO_DIR/scripts/patch-caelestia-$p.py" "$DEST_ROOT" \
+      || echo "AVISO: patch '$p' não aplicado; rode depois: python3 scripts/patch-caelestia-$p.py \"$DEST_ROOT\"" >&2
+  done
 else
-  echo "AVISO: python3 ausente; patch da barra não aplicado." >&2
+  echo "AVISO: python3 ausente; patches do core não aplicados." >&2
 fi
 
 if [ -f "$REPO_DIR/scripts/migrate-serpantinum.sh" ]; then

@@ -1,16 +1,19 @@
 // Portado de Serpantinum: src/quickshell/Shell.qml / Main.qml (AGPL-3.0)
-// Entry do módulo extras: instancia os hosts QuickActions, Dock, NoLimits e WhatsApp,
-// expõe o IPC target "extras" e os atalhos globais correspondentes.
+// Entry do módulo extras: instancia os hosts QuickActions, NoLimits e WhatsApp,
+// o fallback standalone dos Ajustes da Dock e expõe o IPC target "extras" e os
+// atalhos globais correspondentes.
 // Estado: FloatingController (quick actions) / shim Config (dock) / singleton NoLimits /
-// instância local do WhatsAppOverlay.
+// instância local do WhatsAppOverlay / DockSettingsWindow (dock).
+// Nota: a Dock em si deixou de ser instanciada aqui — virou painel nativo do core
+// (ver docs/PORT-SPEC-DOCK.md); este entry só expõe o toggle de configuração.
 
 import QtQuick
 import Quickshell.Io
 import qs.extras
 import qs.components.misc
 import "quickactions"
-import "dock"
 import "nolimits"
+import "settings"
 import "whatsapp"
 
 Item {
@@ -18,10 +21,14 @@ Item {
 
     QuickActions {}
 
-    Dock {}
-
     WhatsAppOverlay {
         id: whatsappOverlay
+    }
+
+    DockSettingsWindow {
+        id: dockSettings
+
+        visible: false
     }
 
     function toggleQuickActions() {
@@ -54,6 +61,14 @@ Item {
         whatsappOverlay.toggle();
     }
 
+    function openDockSettings() {
+        dockSettings.open();
+    }
+
+    function toggleDockSettings() {
+        dockSettings.toggle();
+    }
+
     IpcHandler {
         target: "extras"
 
@@ -80,6 +95,10 @@ Item {
         function toggleWhatsApp(): void {
             root.toggleWhatsApp();
         }
+
+        function openDockSettings(): void {
+            root.openDockSettings();
+        }
     }
 
     CustomShortcut {
@@ -104,5 +123,11 @@ Item {
         name: "whatsapp"
         description: "Toggle WhatsApp panel"
         onPressed: root.toggleWhatsApp()
+    }
+
+    CustomShortcut {
+        name: "docksettings"
+        description: "Toggle dock settings window"
+        onPressed: root.toggleDockSettings()
     }
 }
