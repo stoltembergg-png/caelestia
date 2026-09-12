@@ -101,7 +101,7 @@ func run(args []string) error {
 
 	// Persistence pipeline: the Persister is owned by the service, which
 	// re-registers it on every client it builds (e.g. after a re-pair).
-	persister := svc.EnablePersistence(repo)
+	persister := svc.EnablePersistence(repo, cfg.DataDir)
 
 	startedAt := time.Now()
 	ipcServer := ipc.NewServer(cfg.Socket, logger)

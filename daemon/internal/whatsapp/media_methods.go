@@ -165,39 +165,7 @@ func mediaDownloadResult(md *database.Media, cached bool) map[string]any {
 // writeThumbnail stores embedded thumbnail bytes as <sha>.jpg under the
 // top-level thumbnails/ directory, atomically and owner-only.
 func (m *Methods) writeThumbnail(sha string, data []byte) (string, error) {
-	if err := os.MkdirAll(m.thumbDir, database.DirPerm); err != nil {
-		return "", err
-	}
-	final := filepath.Join(m.thumbDir, sha+".jpg")
-	if !pathWithin(m.thumbDir, final) {
-		return "", errors.New("whatsapp: thumbnail path escapes data dir")
-	}
-	tmp, err := os.CreateTemp(m.thumbDir, ".thumb-*")
-	if err != nil {
-		return "", err
-	}
-	tmpPath := tmp.Name()
-	ok := false
-	defer func() {
-		if !ok {
-			_ = tmp.Close()
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if _, err := tmp.Write(data); err != nil {
-		return "", err
-	}
-	if err := tmp.Close(); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmpPath, final); err != nil {
-		return "", err
-	}
-	if err := os.Chmod(final, database.FilePerm); err != nil {
-		return "", err
-	}
-	ok = true
-	return final, nil
+	return writeThumbFile(m.thumbDir, sha, data)
 }
 
 // --- message.react ---

@@ -750,8 +750,8 @@ func (r *Repo) UpsertMedia(ctx context.Context, m Media) error {
 	}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO cae_media
-			(id, message_id, kind, mime, size, width, height, filename, proto)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			(id, message_id, kind, mime, size, width, height, filename, proto, thumb_path)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
 			message_id = CASE WHEN excluded.message_id <> '' THEN excluded.message_id ELSE cae_media.message_id END,
 			kind       = CASE WHEN excluded.kind <> '' THEN excluded.kind ELSE cae_media.kind END,
@@ -760,10 +760,11 @@ func (r *Repo) UpsertMedia(ctx context.Context, m Media) error {
 			width      = CASE WHEN excluded.width > 0 THEN excluded.width ELSE cae_media.width END,
 			height     = CASE WHEN excluded.height > 0 THEN excluded.height ELSE cae_media.height END,
 			filename   = CASE WHEN excluded.filename IS NOT NULL THEN excluded.filename ELSE cae_media.filename END,
-			proto      = CASE WHEN excluded.proto IS NOT NULL THEN excluded.proto ELSE cae_media.proto END`,
+			proto      = CASE WHEN excluded.proto IS NOT NULL THEN excluded.proto ELSE cae_media.proto END,
+			thumb_path = CASE WHEN excluded.thumb_path IS NOT NULL THEN excluded.thumb_path ELSE cae_media.thumb_path END`,
 		m.ID, nullString(m.MessageID), nullString(m.Kind), nullString(m.Mime),
 		nullInt64(m.Size), m.Width, m.Height,
-		nullString(m.Filename), nullBytes(m.Proto),
+		nullString(m.Filename), nullBytes(m.Proto), nullString(m.ThumbPath),
 	)
 	if err != nil {
 		return fmt.Errorf("database: upsert media %q: %w", m.ID, err)
@@ -852,6 +853,53 @@ func (r *Repo) MarkMediaDownloaded(ctx context.Context, messageID, path, sha256,
 		return fmt.Errorf("database: mark media downloaded %q: %w", messageID, err)
 	}
 	return nil
+}
+
+// SetMediaThumbPath records the on-disk path of a media thumbnail.
+func (r *Repo) SetMediaThumbPath(ctx context.Context, messageID, thumbPath string) error {
+	if thumbPath == "" {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE cae_media SET thumb_path = ? WHERE message_id = ?`, thumbPath, messageID)
+	if err != nil {
+		return fmt.Errorf("database: set media thumb %q: %w", messageID, err)
+	}
+	return nil
+}
+
+// PendingThumbnails returns media rows of a thumbnail-capable kind that carry a
+// download proto but no thumbnail path yet, oldest first. It backs the
+// startup backfill that materializes the embedded (offline) thumbnail of media
+// persisted before thumbnails were extracted.
+func (r *Repo) PendingThumbnails(ctx context.Context, limit int) ([]Media, error) {
+	rows, err := r.db.QueryContext(ctx, mediaSelect+`, COALESCE(proto, X'')
+		FROM cae_media
+		WHERE (thumb_path IS NULL OR thumb_path = '')
+		  AND proto IS NOT NULL AND length(proto) > 0
+		  AND kind IN ('image', 'video', 'sticker')
+		ORDER BY rowid
+		LIMIT ?`, normalizeLimit(limit))
+	if err != nil {
+		return nil, fmt.Errorf("database: pending thumbnails: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]Media, 0, 16)
+	for rows.Next() {
+		var m Media
+		if err := rows.Scan(
+			&m.ID, &m.MessageID, &m.Kind, &m.Mime, &m.Size, &m.Path, &m.SHA256,
+			&m.Status, &m.DownloadedAt, &m.Width, &m.Height, &m.ThumbPath, &m.Filename, &m.Proto,
+		); err != nil {
+			return nil, fmt.Errorf("database: scan pending thumbnail: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("database: iterate pending thumbnails: %w", err)
+	}
+	return out, nil
 }
 
 // ListReactionsForMessages returns the current reactions of every given message

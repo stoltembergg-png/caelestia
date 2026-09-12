@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -65,6 +66,10 @@ type Persister struct {
 	repo   *database.Repo
 	logger *slog.Logger
 
+	// thumbDir is where embedded thumbnails are materialized on persistence.
+	// Empty disables thumbnail extraction (tests that do not need files).
+	thumbDir string
+
 	inbox chan any
 	done  chan struct{}
 	wg    sync.WaitGroup
@@ -111,16 +116,21 @@ func (p *Persister) emitDomain(name string, data map[string]any) {
 // the Service, so attachHandlersLocked re-registers it on every client built
 // afterwards (e.g. after a logout + re-pair). Callers must Close the returned
 // Persister before closing the DB.
-func (s *Service) EnablePersistence(repo *database.Repo) *Persister {
+func (s *Service) EnablePersistence(repo *database.Repo, dataDir string) *Persister {
 	if repo == nil {
 		panic("whatsapp: EnablePersistence with nil repo")
 	}
+	thumbDir := ""
+	if dataDir != "" {
+		thumbDir = filepath.Join(dataDir, "thumbnails")
+	}
 	p := &Persister{
-		svc:    s,
-		repo:   repo,
-		logger: s.logger,
-		inbox:  make(chan any, eventBufferSize*4),
-		done:   make(chan struct{}),
+		svc:      s,
+		repo:     repo,
+		logger:   s.logger,
+		thumbDir: thumbDir,
+		inbox:    make(chan any, eventBufferSize*4),
+		done:     make(chan struct{}),
 	}
 	p.parseWebMessage = func(chatJID types.JID, wm *waWeb.WebMessageInfo) (*events.Message, error) {
 		c := s.fullClient()
@@ -137,10 +147,18 @@ func (s *Service) EnablePersistence(repo *database.Repo) *Persister {
 	s.mu.Lock()
 	s.persister = p
 	s.groupRepair = NewGroupRepairer(s, repo, s.logger)
+	s.thumbRepair = NewThumbRepairer(s, repo, thumbDir, s.logger)
 	if s.client != nil {
 		s.client.AddEventHandler(p.handleEvent)
 	}
 	s.mu.Unlock()
+
+	// One bounded pass at startup materializes the embedded thumbnails of media
+	// persisted before thumbnails were extracted. It is local-only (reads the
+	// stored proto), so it does not need a connection.
+	if s.thumbRepair != nil {
+		s.thumbRepair.Kick()
+	}
 
 	p.wg.Add(1)
 	go p.run()
@@ -349,6 +367,11 @@ func (p *Persister) persistMessageWithRepo(ctx context.Context, repo *database.R
 	mediaID := ""
 	if media != nil {
 		mediaID = m.Info.ID
+		// Materialize the thumbnail embedded in the media protobuf right away
+		// (image/video/sticker carry JPEGThumbnail, sticker a PngThumbnail).
+		// This is offline and independent of media.download, so chat.messages
+		// can render a preview before the full file is fetched.
+		p.attachEmbeddedThumb(media)
 	}
 	msg := database.Message{
 		ID:        m.Info.ID,
@@ -801,4 +824,30 @@ func initialStatus(fromMe bool) string {
 		return "sent"
 	}
 	return ""
+}
+
+// attachEmbeddedThumb extracts the thumbnail already present in a media
+// protobuf and writes it to thumbnails/<sha256>.jpg (0600), setting md.ThumbPath
+// so it is persisted even when the full media is not downloaded. It is a no-op
+// when there is no embedded thumbnail or no thumbnail directory configured.
+func (p *Persister) attachEmbeddedThumb(md *database.Media) {
+	if p == nil || md == nil || p.thumbDir == "" {
+		return
+	}
+	data := mediaThumbnail(md.Kind, md.Proto)
+	if len(data) == 0 {
+		return
+	}
+	sha := mediaProtoSHA256(md.Kind, md.Proto)
+	if sha == "" {
+		sha = sha256HexBytes(md.Proto)
+	}
+	path, err := writeThumbFile(p.thumbDir, sha, data)
+	if err != nil {
+		p.logger.Debug("whatsapp: embedded thumbnail write failed",
+			slog.String("kind", md.Kind),
+			slog.String("error", err.Error()))
+		return
+	}
+	md.ThumbPath = path
 }

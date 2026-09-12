@@ -468,9 +468,14 @@ Response:
 `unknown`). `status` é `sent`/`delivered`/`read` para mensagens enviadas.
 
 Mensagens de mídia ganham um objeto `media` **sem bytes**: `kind`, `mime`,
-`size`, `width`, `height`, `downloaded` (o arquivo já está no cache) e `thumb`
-(caminho absoluto da thumbnail gerada, ou `null`). O download dos bytes é feito
-por `media.download`. Toda mensagem traz também `reactions`, a lista
+`size`, `width`, `height`, `downloaded` (o arquivo completo já está no cache) e
+`thumb` (caminho absoluto da thumbnail, ou `null`). O `thumb` é extraído do
+**thumbnail embutido** no protobuf (JPEGThumbnail de imagem/vídeo, PngThumbnail
+de sticker) já na persistência, sem rede, então ele aparece **antes** de
+`media.download` (`downloaded=false`). Mídias antigas, persistidas antes da
+extração, têm os thumbs gerados por um backfill local no startup a partir do
+`proto` salvo em `cae_media`. O download dos bytes completos é feito por
+`media.download`. Toda mensagem traz também `reactions`, a lista
 `[{"sender","emoji","from_me"}]` das reações atuais (vazia quando não há).
 
 > **Semântica de persistência (persist).**
@@ -598,9 +603,10 @@ Response:
 Baixa, sob demanda, os bytes de mídia de uma mensagem e devolve apenas
 caminho/metadados (nunca bytes). Usa `DownloadToFile` (streaming) para
 `cache/{images,videos,audio,documents,stickers}/<sha256>.<ext>` (arquivo
-`0600`); para imagem/vídeo/sticker gera também a thumbnail embutida em
-`thumbnails/<sha256>.jpg`. O resultado é persistido em `cae_media`; uma segunda
-chamada devolve o cache (`"cached": true`). Erros: `not_paired`,
+`0600`); para imagem/vídeo/sticker a thumbnail embutida já costuma existir em
+`thumbnails/<sha256>.jpg` desde a persistência/backfill e é reutilizada (o
+download só a garante caso falte). O resultado é persistido em `cae_media`; uma
+segunda chamada devolve o cache (`"cached": true`). Erros: `not_paired`,
 `invalid_request` (sem `chat`/`id`), `not_found` (mensagem inexistente ou de
 outro chat), `no_media` (mensagem sem mídia baixável), `download_failed`.
 

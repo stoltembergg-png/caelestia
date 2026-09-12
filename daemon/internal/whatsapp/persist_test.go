@@ -42,11 +42,12 @@ func newTestPersister(t *testing.T) (*Persister, *database.Repo, context.Context
 
 	svc := &Service{logger: logger, ctx: ctx, cancel: cancel}
 	p := &Persister{
-		svc:    svc,
-		repo:   repo,
-		logger: logger,
-		inbox:  make(chan any, eventBufferSize*4),
-		done:   make(chan struct{}),
+		svc:      svc,
+		repo:     repo,
+		logger:   logger,
+		thumbDir: t.TempDir(),
+		inbox:    make(chan any, eventBufferSize*4),
+		done:     make(chan struct{}),
 	}
 	return p, repo, ctx
 }

@@ -273,3 +273,67 @@ func validSHA256Hex(s string) bool {
 	_, err := hex.DecodeString(s)
 	return err == nil
 }
+
+// sha256HexBytes returns the lowercase hex SHA-256 of b.
+func sha256HexBytes(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// mediaProtoSHA256 returns the plaintext SHA-256 (hex) stored in a media
+// protobuf, when present and well-formed. It is used to name the thumbnail file
+// exactly like the downloaded media, so both forms share one cache entry.
+func mediaProtoSHA256(kind string, raw []byte) string {
+	sub, err := decodeDownloadable(kind, raw)
+	if err != nil {
+		return ""
+	}
+	sum := sub.GetFileSHA256()
+	if len(sum) != 32 {
+		return ""
+	}
+	return hex.EncodeToString(sum)
+}
+
+// writeThumbFile stores thumbnail bytes as <sha>.jpg under thumbDir, atomically
+// and owner-only. It is shared by the download path, the send path and the
+// embedded-thumbnail persistence/backfill so every thumbnail uses one naming
+// scheme.
+func writeThumbFile(thumbDir, sha string, data []byte) (string, error) {
+	if thumbDir == "" || sha == "" || len(data) == 0 {
+		return "", errors.New("whatsapp: invalid thumbnail target")
+	}
+	if err := os.MkdirAll(thumbDir, database.DirPerm); err != nil {
+		return "", err
+	}
+	final := filepath.Join(thumbDir, sha+".jpg")
+	if !pathWithin(thumbDir, final) {
+		return "", errors.New("whatsapp: thumbnail path escapes data dir")
+	}
+	tmp, err := os.CreateTemp(thumbDir, ".thumb-*")
+	if err != nil {
+		return "", err
+	}
+	tmpPath := tmp.Name()
+	ok := false
+	defer func() {
+		if !ok {
+			_ = tmp.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmpPath, final); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(final, database.FilePerm); err != nil {
+		return "", err
+	}
+	ok = true
+	return final, nil
+}

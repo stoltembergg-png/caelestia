@@ -32,7 +32,7 @@ func TestPersistenceReattachedAfterRebuild(t *testing.T) {
 	svc, _ := newTestService(t, base)
 	repo, _ := openTestRepo(t)
 
-	p := svc.EnablePersistence(repo)
+	p := svc.EnablePersistence(repo, t.TempDir())
 	t.Cleanup(p.Close)
 
 	if got := base.handlerCount(); got != 2 {
@@ -87,7 +87,7 @@ func TestHandlersAttachedBeforeConnect(t *testing.T) {
 	svc, _ := newTestService(t, base)
 	repo, _ := openTestRepo(t)
 
-	p := svc.EnablePersistence(repo)
+	p := svc.EnablePersistence(repo, t.TempDir())
 	t.Cleanup(p.Close)
 
 	jid := types.NewJID("5511999999999", types.DefaultUserServer)
