@@ -43,6 +43,9 @@ Item {
     // ------------------------------------------------------------------ //
     // 0 = totalmente visível, 1 = totalmente recolhido.
     property bool opened: false
+    // Após a primeira abertura, mantemos o conteúdo carregado (custo ocioso
+    // baixo: a lista renderiza só o viewport) para reabrir sem recriar tudo.
+    property bool _everOpened: false
     property real offsetScale: root.opened ? 0 : 1
 
     implicitWidth: Math.round(Math.max(380, Math.min(440, root.screen.width * 0.34)))
@@ -68,6 +71,7 @@ Item {
     // ------------------------------------------------------------------ //
     function open(): void {
         root.opened = true;
+        root._everOpened = true;
         WhatsAppState.visible = true;
     }
 
@@ -117,7 +121,7 @@ Item {
         id: content
 
         anchors.fill: parent
-        active: root.opened || root.offsetScale < 1
+        active: root._everOpened || root.opened || root.offsetScale < 1
         asynchronous: true
 
         sourceComponent: WhatsAppPanel {

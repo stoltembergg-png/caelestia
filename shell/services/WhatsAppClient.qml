@@ -213,6 +213,16 @@ Singleton {
     readonly property var _avatarRequested: ({})
     readonly property var _avatarQueue: []
 
+    // Cache de mensagens por chat (LRU) para reabrir uma conversa sem
+    // recarregar. Guarda as linhas já montadas (role objects).
+    property var _msgCache: ({})
+    property var _msgCacheOrder: []
+    readonly property int _msgCacheMax: 10
+    // Qual conversa o messagesModel representa no momento.
+    property string _modelChat: ""
+    // Memoiza o parse de reactions (a maioria é "[]" repetido).
+    readonly property var _reactionsMemo: ({})
+
     function _syncPendingCount(): void {
         root._pendingCount = Object.keys(root._pending).length;
     }
@@ -700,6 +710,45 @@ Singleton {
         root._recountUnread();
     }
 
+    // Reconciliação incremental da lista de conversas (sem clear): atualiza no
+    // lugar, insere novos, reordena e remove apenas o que sumiu.
+    function _reconcileChats(list) {
+        const wanted = [];
+        const seen = ({});
+        for (let i = 0; i < list.length; i++) {
+            const c = list[i];
+            if (!c || root._isSystemChat(c.jid))
+                continue;
+            const jid = String(c.jid || "");
+            if (!jid.length || seen[jid])
+                continue;
+            const cur0 = root._chatIndex(jid);
+            const base = cur0 >= 0 ? chatsModel.get(cur0) : null;
+            wanted.push({
+                "jid": jid,
+                "row": root._chatRow(c, base)
+            });
+            seen[jid] = true;
+        }
+        for (let i = 0; i < wanted.length; i++) {
+            const cur = root._chatIndex(wanted[i].jid);
+            if (cur < 0) {
+                chatsModel.insert(Math.min(i, chatsModel.count), wanted[i].row);
+            } else if (cur === i) {
+                chatsModel.set(i, wanted[i].row);
+            } else {
+                chatsModel.set(cur, wanted[i].row);
+                chatsModel.move(cur, i, 1);
+            }
+        }
+        for (let i = chatsModel.count - 1; i >= wanted.length; i--)
+            chatsModel.remove(i);
+        for (let i = chatsModel.count - 1; i >= 0; i--) {
+            if (!seen[String(chatsModel.get(i).jid || "")])
+                chatsModel.remove(i);
+        }
+    }
+
     function refreshChats() {
         root._send("chats.list", {
             "limit": 100
@@ -709,12 +758,9 @@ Singleton {
             const list = res.slice().sort(function (a, b) {
                 return Number(b.timestamp || 0) - Number(a.timestamp || 0);
             });
-            chatsModel.clear();
+            root._reconcileChats(list);
             for (let i = 0; i < list.length; i++) {
-                if (root._isSystemChat(list[i].jid))
-                    continue;
-                chatsModel.append(root._chatRow(list[i]));
-                if (!list[i].avatar)
+                if (!list[i].avatar && !root._isSystemChat(list[i].jid))
                     root.requestAvatar(String(list[i].jid || ""));
             }
             root._recountUnread();
@@ -728,11 +774,59 @@ Singleton {
         });
     }
 
+    // ------------------------------------------------------------------ //
+    // Cache de mensagens por chat (LRU)
+    // ------------------------------------------------------------------ //
+    function _touchMsgCache(jid) {
+        const j = String(jid || "");
+        if (!j.length)
+            return;
+        const at = root._msgCacheOrder.indexOf(j);
+        if (at >= 0)
+            root._msgCacheOrder.splice(at, 1);
+        root._msgCacheOrder.push(j);
+        while (root._msgCacheOrder.length > root._msgCacheMax) {
+            const evict = root._msgCacheOrder.shift();
+            delete root._msgCache[evict];
+        }
+    }
+
+    function _snapshotMessages(jid) {
+        const j = String(jid || "");
+        if (!j.length)
+            return;
+        const arr = [];
+        for (let i = 0; i < messagesModel.count; i++)
+            arr.push(messagesModel.get(i));
+        root._msgCache[j] = arr;
+        root._touchMsgCache(j);
+    }
+
+    // Reconcilia o messagesModel com um array de linhas (ordem cronológica),
+    // sem rebuild: atualiza no lugar, insere e remove só o necessário.
+    function _reconcileMessages(rows) {
+        for (let i = 0; i < rows.length; i++) {
+            const cur = root._messageIndex(rows[i].messageId);
+            if (cur < 0) {
+                messagesModel.insert(Math.min(i, messagesModel.count), rows[i]);
+            } else if (cur === i) {
+                messagesModel.set(i, rows[i]);
+            } else {
+                messagesModel.set(cur, rows[i]);
+                messagesModel.move(cur, i, 1);
+            }
+        }
+        for (let i = messagesModel.count - 1; i >= rows.length; i--)
+            messagesModel.remove(i);
+    }
+
     function openChat(jid) {
         if (!jid)
             return;
         const id = String(jid);
         root.closeViewer();
+        if (root.currentChat && root.currentChat !== id)
+            root._snapshotMessages(root.currentChat);
         root.currentChat = id;
         root.currentChatName = root._chatName(id);
         const ci = root._chatIndex(id);
@@ -740,7 +834,15 @@ Singleton {
         if (!root.currentChatAvatar.length)
             root.requestAvatar(id);
         root.clearReply();
-        messagesModel.clear();
+        root._touchMsgCache(id);
+
+        // Render instantâneo do cache, sem clear quando já é a conversa atual.
+        if (root._modelChat !== id) {
+            const cached = root._msgCache[id];
+            root._reconcileMessages(cached && cached.length ? cached : []);
+            root._modelChat = id;
+        }
+
         root._send("chat.messages", {
             "jid": id,
             "limit": 60
@@ -748,8 +850,12 @@ Singleton {
             if (err || !Array.isArray(res))
                 return;
             const list = res.slice().reverse(); // daemon devolve recentes primeiro
+            const rows = [];
             for (let i = 0; i < list.length; i++)
-                root._appendMessageIfNew(list[i]);
+                rows.push(root._messageRow(list[i]));
+            root._reconcileMessages(rows);
+            root._modelChat = id;
+            root._snapshotMessages(id);
             root.messageAppended(id);
         });
         root.markRead();
@@ -757,11 +863,14 @@ Singleton {
 
     function closeChat() {
         root.closeViewer();
+        if (root.currentChat)
+            root._snapshotMessages(root.currentChat);
         root.currentChat = "";
         root.currentChatName = "";
         root.currentChatAvatar = "";
         root.clearReply();
-        messagesModel.clear();
+        // Não limpa o messagesModel nem o cache: reabrir é instantâneo e o
+        // scroll da conversa é preservado.
     }
 
     // ------------------------------------------------------------------ //
@@ -805,14 +914,27 @@ Singleton {
     }
 
     // O ListModel não preserva arrays como role, então as reações viajam como
-    // string JSON e são parseadas pela UI/consumidores.
+    // string JSON. Memoiza o parse por string (a maioria é "[]" repetido), de
+    // modo que cada balão não reparseia a cada avaliação de binding.
     function reactionsOf(json) {
+        const key = String(json || "[]");
+        const cached = root._reactionsMemo[key];
+        if (cached)
+            return cached;
+        let parsed = [];
         try {
-            const parsed = JSON.parse(String(json || "[]"));
-            return Array.isArray(parsed) ? parsed : [];
+            const p = JSON.parse(key);
+            if (Array.isArray(p))
+                parsed = p;
         } catch (e) {
-            return [];
         }
+        root._reactionsMemo[key] = parsed;
+        const keys = Object.keys(root._reactionsMemo);
+        if (keys.length > 64) {
+            for (let i = 0; i < keys.length - 64; i++)
+                delete root._reactionsMemo[keys[i]];
+        }
+        return parsed;
     }
 
     // Citação: usa o payload se vier, senão procura a mensagem carregada.
@@ -887,12 +1009,15 @@ Singleton {
 
     function _appendMessageIfNew(m) {
         const row = root._messageRow(m);
+        // Não polui o messagesModel com mensagens de outras conversas.
+        if (row.chat !== root.currentChat)
+            return row;
         const idx = root._messageIndex(row.messageId);
-        if (idx >= 0) {
+        if (idx >= 0)
             messagesModel.set(idx, row);
-            return;
-        }
-        messagesModel.append(row);
+        else
+            messagesModel.append(row);
+        return row;
     }
 
     function _previewFor(m) {
@@ -947,6 +1072,8 @@ Singleton {
         if (!msg)
             return;
         const row = root._messageRow(msg);
+        if (row.chat !== root.currentChat)
+            return;
         const idx = root._messageIndex(row.messageId);
         if (idx >= 0)
             messagesModel.set(idx, row);
@@ -1480,8 +1607,12 @@ Singleton {
             root.qrPng = "";
             root.currentChat = "";
             root.currentChatName = "";
+            root.currentChatAvatar = "";
             chatsModel.clear();
             messagesModel.clear();
+            root._modelChat = "";
+            root._msgCache = ({});
+            root._msgCacheOrder = [];
             root.unreadCount = 0;
         });
     }

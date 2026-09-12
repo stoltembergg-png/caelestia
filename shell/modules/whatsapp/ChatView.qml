@@ -37,7 +37,8 @@ Item {
                 topMargin: root.compact ? Tokens.spacing.extraSmall : Tokens.spacing.small
                 bottomMargin: root.compact ? Tokens.spacing.small : Tokens.spacing.small
                 boundsBehavior: Flickable.StopAtBounds
-                reuseItems: false
+                reuseItems: true
+                cacheBuffer: 4000
 
                 delegate: Component {
                     Item {
