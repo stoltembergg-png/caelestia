@@ -170,8 +170,7 @@ Response:
 
 ### `status`
 
-Snapshot de estado do daemon. Nesta fase os blocos `connection` e `auth` são
-**placeholders** até a integração com o whatsmeow (fase 2.3+).
+Snapshot geral do daemon, incluindo o estado de conexão/autenticação (fase 2.3).
 
 Request:
 
@@ -189,26 +188,95 @@ Response:
     "uptime_seconds": 42,
     "data_dir": "/home/user/.local/share/caelestia-whatsapp",
     "socket": "/run/user/1000/caelestia-whatsapp.sock",
-    "connection": {"state": "disconnected"},
-    "auth": {"state": "unknown"}
+    "connection": {"state": "needs_pairing"},
+    "auth": {"state": "needs_pairing", "logged_in": false}
   }
 }
 ```
 
+### `auth.start` (fase 2.3)
+
+Inicia o fluxo de pareamento por QR code. O daemon chama `GetQRChannel` **antes**
+do `Connect` e passa a emitir eventos `auth.qr`. O código do QR **nunca** é
+registrado em log (apenas `"qr emitted"`).
+
+Request:
+
+```json
+{"id":3,"method":"auth.start"}
+```
+
+Response (aceito):
+
+```json
+{"id":3,"result":{"started":true}}
+```
+
+Erros: se já existe sessão ou um login já está em andamento, responde
+`invalid_request` (ex.: `whatsapp: already logged in`).
+
+### `auth.status` (fase 2.3)
+
+Estado atual da autenticação. `jid`/`push_name` só aparecem quando conhecidos;
+`banned_until` (RFC 3339) só aparece durante um banimento temporário.
+
+Request:
+
+```json
+{"id":4,"method":"auth.status"}
+```
+
+Response (sem sessão):
+
+```json
+{"id":4,"result":{"state":"needs_pairing","logged_in":false}}
+```
+
+Response (conectado):
+
+```json
+{
+  "id": 5,
+  "result": {
+    "state": "connected",
+    "logged_in": true,
+    "jid": "5511999999999@s.whatsapp.net",
+    "push_name": "Fulano"
+  }
+}
+```
+
+Estados possíveis: `disconnected`, `connecting`, `connected`, `needs_pairing`,
+`logged_out`, `banned`, `outdated`, `stream_replaced`.
+
+### `auth.logout` (fase 2.3)
+
+Desvincula o dispositivo, apaga a sessão local e volta a `needs_pairing`.
+
+Request:
+
+```json
+{"id":6,"method":"auth.logout"}
+```
+
+Response:
+
+```json
+{"id":6,"result":{"logged_out":true,"state":"needs_pairing"}}
+```
+
 ---
 
-## 7. Métodos e eventos planejados (fase 2.3+)
+## 7. Métodos e eventos planejados (fase 2.4+)
 
 Ainda **não** implementados; um request a eles responde `method_not_found`. A
 tabela congela os nomes para o contrato não mudar quando forem implementados.
+(`auth.start`, `auth.status` e `auth.logout` já estão implementados — ver §6.)
 
 Métodos (de `ARQUITETURA.md` §3.3):
 
 | Método | Descrição |
 |---|---|
-| `auth.start` | inicia o fluxo de QR (`GetQRChannel` antes do `Connect`) |
-| `auth.status` | estado atual da autenticação |
-| `auth.logout` | desloga e volta a `NEEDS_PAIRING` |
 | `chats.list` | lista de conversas |
 | `chat.open` | abre uma conversa |
 | `chat.messages` | histórico recente/paginado de uma conversa |
@@ -224,18 +292,26 @@ Métodos (de `ARQUITETURA.md` §3.3):
 
 Eventos (push, sem `id`):
 
+Implementados na fase 2.3:
+
 | Evento | Descrição |
 |---|---|
-| `auth.qr` | novo código QR (`{code, timeout}`) |
-| `auth.connected` | pareamento/autenticação concluídos |
-| `auth.disconnected` | sessão desconectada |
+| `auth.qr` | novo código QR (`{code, timeout}`); o `code` vai só no IPC, nunca no log |
+| `auth.connected` | pareamento/autenticação concluídos (`{jid?, push_name?}`) |
+| `auth.disconnected` | sessão desconectada/logout (`{reason}`) |
+| `auth.error` | erro de pareamento (`{message}`): timeout, QR inválido, client outdated… |
+| `connection.updated` | estado da conexão (`{state, since}`), emitido a cada transição |
+
+Planejados (fase 2.4+):
+
+| Evento | Descrição |
+|---|---|
 | `message.received` | nova mensagem |
 | `message.updated` | mensagem editada/atualizada |
 | `message.deleted` | mensagem apagada |
 | `receipt.updated` | recibo (entregue/lido) |
 | `chat.updated` | metadados da conversa mudaram |
 | `typing.updated` | presença de digitação |
-| `connection.updated` | estado da conexão (`{state, since}`) |
 
 > Lembrete: IDs e timestamps de 64 bits nesses eventos vão como **string**
 > (seção 2.4).
@@ -248,13 +324,22 @@ Request e response (ARQUITETURA §3.3):
 
 ```
 → {"id":1,"method":"status","params":{}}
-← {"id":1,"result":{"version":"0.1.0-dev","uptime_seconds":42,"connection":{"state":"disconnected"}}}
+← {"id":1,"result":{"version":"0.1.0-dev","uptime_seconds":42,"connection":{"state":"needs_pairing"},"auth":{"state":"needs_pairing","logged_in":false}}}
 ```
 
-Evento:
+Fluxo de login por QR:
 
 ```
+→ {"id":2,"method":"auth.status"}
+← {"id":2,"result":{"state":"needs_pairing","logged_in":false}}
+
+→ {"id":3,"method":"auth.start"}
+← {"id":3,"result":{"started":true}}
+
 ← {"event":"auth.qr","data":{"code":"2@abcd...","timeout":60}}
+
+← {"event":"auth.connected","data":{"jid":"5511999999999@s.whatsapp.net","push_name":"Fulano"}}
+← {"event":"connection.updated","data":{"state":"connected","since":"1730000000000"}}
 ```
 
 Erro:
@@ -273,8 +358,10 @@ s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 s.connect("/tmp/cw-test.sock")
 s.sendall(b'{"id":1,"method":"ping"}\n')
 print(s.recv(4096).decode())          # {"id":1,"result":{"pong":true,...}}
-s.sendall(b'{"id":2,"method":"nao.existe"}\n')
-print(s.recv(4096).decode())          # {"id":2,"error":{"code":"method_not_found",...}}
+s.sendall(b'{"id":2,"method":"auth.status"}\n')
+print(s.recv(4096).decode())          # {"id":2,"result":{"state":"needs_pairing",...}}
+s.sendall(b'{"id":3,"method":"nao.existe"}\n')
+print(s.recv(4096).decode())          # {"id":3,"error":{"code":"method_not_found",...}}
 ```
 
 ---

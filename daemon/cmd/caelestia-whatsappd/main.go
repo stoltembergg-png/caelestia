@@ -1,13 +1,13 @@
 // Command caelestia-whatsappd is the native WhatsApp backend daemon.
 //
-// It wires configuration, logging, the SQLite database and the IPC server. The
-// whatsmeow client is intentionally not part of it yet: the exposed ping/status
-// methods are enough to exercise the socket end to end.
+// It wires configuration, logging, the SQLite database, the whatsmeow service
+// (connection/authentication state machine + event pump) and the IPC server.
 package main
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -20,6 +20,7 @@ import (
 	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/database"
 	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/ipc"
 	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/logging"
+	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/whatsapp"
 )
 
 // version is the daemon build version (not a secret).
@@ -66,27 +67,35 @@ func run(args []string) error {
 	)
 	logger.Info("database ready", slog.String("path", dbPath))
 
+	// The whatsmeow store shares the daemon's SQLite handle. Service.New runs
+	// container.Upgrade and, if a session exists, connects in the background.
+	svc, err := whatsapp.New(context.Background(), db, logger)
+	if err != nil {
+		_ = db.Close()
+		return err
+	}
+	logger.Info("whatsapp service ready", slog.String("state", string(svc.State())))
+
 	startedAt := time.Now()
 	ipcServer := ipc.NewServer(cfg.Socket, logger)
-	ipcServer.Register("ping", func(_ context.Context, _ *ipc.Client, _ json.RawMessage) (any, *ipc.Error) {
-		return map[string]any{"pong": true, "version": version}, nil
-	})
-	ipcServer.Register("status", func(_ context.Context, _ *ipc.Client, _ json.RawMessage) (any, *ipc.Error) {
-		return map[string]any{
-			"version":        version,
-			"uptime_seconds": int64(time.Since(startedAt).Seconds()),
-			"data_dir":       cfg.DataDir,
-			"socket":         cfg.Socket,
-			// Placeholders until the whatsmeow integration lands (phase 2.3+).
-			"connection": map[string]any{"state": "disconnected"},
-			"auth":       map[string]any{"state": "unknown"},
-		}, nil
-	})
+	registerHandlers(ipcServer, svc, cfg, startedAt)
+
 	if err := ipcServer.Start(); err != nil {
+		_ = svc.Close()
 		_ = db.Close()
 		return err
 	}
 	logger.Info("ipc server listening", slog.String("socket", cfg.Socket))
+
+	// Event pump: service -> IPC broadcast. It ends when the service closes its
+	// Events channel on shutdown.
+	pumpDone := make(chan struct{})
+	go func() {
+		defer close(pumpDone)
+		for ev := range svc.Events() {
+			ipcServer.Broadcast(ev.Name, ev.Data)
+		}
+	}()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -95,6 +104,14 @@ func run(args []string) error {
 	logger.Info("ready; waiting for shutdown signal")
 	sig := <-sigCh
 	logger.Info("shutdown signal received", slog.String("signal", sig.String()))
+
+	// Stop the whatsmeow service first (disconnect, drain the pump), then the
+	// IPC server and finally the shared database.
+	if err := svc.Close(); err != nil {
+		logger.Warn("close whatsapp service", slog.String("error", err.Error()))
+	}
+	<-pumpDone
+	logger.Info("whatsapp service stopped")
 
 	if err := ipcServer.Close(); err != nil {
 		return fmt.Errorf("close ipc server: %w", err)
@@ -106,6 +123,79 @@ func run(args []string) error {
 	}
 	logger.Info("shutdown complete")
 	return nil
+}
+
+// registerHandlers installs the ping/status/auth methods.
+func registerHandlers(s *ipc.Server, svc *whatsapp.Service, cfg *config.Config, startedAt time.Time) {
+	s.Register("ping", func(_ context.Context, _ *ipc.Client, _ json.RawMessage) (any, *ipc.Error) {
+		return map[string]any{"pong": true, "version": version}, nil
+	})
+
+	s.Register("status", func(_ context.Context, _ *ipc.Client, _ json.RawMessage) (any, *ipc.Error) {
+		st := svc.AuthStatus()
+		return map[string]any{
+			"version":        version,
+			"uptime_seconds": int64(time.Since(startedAt).Seconds()),
+			"data_dir":       cfg.DataDir,
+			"socket":         cfg.Socket,
+			"connection":     map[string]any{"state": string(st.State)},
+			"auth":           authResult(st),
+		}, nil
+	})
+
+	s.Register("auth.start", func(ctx context.Context, _ *ipc.Client, _ json.RawMessage) (any, *ipc.Error) {
+		// The provided ctx is the long-lived server context: StartLogin hands it
+		// to GetQRChannel, whose lifetime must outlive this handler invocation.
+		if err := svc.StartLogin(ctx); err != nil {
+			return nil, authError(err)
+		}
+		return map[string]any{"started": true}, nil
+	})
+
+	s.Register("auth.status", func(_ context.Context, _ *ipc.Client, _ json.RawMessage) (any, *ipc.Error) {
+		return authResult(svc.AuthStatus()), nil
+	})
+
+	s.Register("auth.logout", func(ctx context.Context, _ *ipc.Client, _ json.RawMessage) (any, *ipc.Error) {
+		logoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := svc.Logout(logoutCtx); err != nil {
+			return nil, &ipc.Error{Code: ipc.ErrorInternal, Message: err.Error()}
+		}
+		return map[string]any{
+			"logged_out": true,
+			"state":      string(svc.State()),
+		}, nil
+	})
+}
+
+// authResult builds the auth.status payload. jid/push_name are only present
+// when a device is known.
+func authResult(st whatsapp.AuthStatus) map[string]any {
+	out := map[string]any{
+		"state":     string(st.State),
+		"logged_in": st.LoggedIn,
+	}
+	if st.JID != "" {
+		out["jid"] = st.JID
+	}
+	if st.PushName != "" {
+		out["push_name"] = st.PushName
+	}
+	if !st.BanUntil.IsZero() {
+		out["banned_until"] = st.BanUntil.UTC().Format(time.RFC3339)
+	}
+	return out
+}
+
+// authError maps service errors to protocol errors without leaking internals.
+func authError(err error) *ipc.Error {
+	switch {
+	case errors.Is(err, whatsapp.ErrAlreadyLoggedIn), errors.Is(err, whatsapp.ErrLoginInProgress):
+		return &ipc.Error{Code: ipc.ErrorInvalidRequest, Message: err.Error()}
+	default:
+		return &ipc.Error{Code: ipc.ErrorInternal, Message: err.Error()}
+	}
 }
 
 // ensureDir creates dir (if needed) and restricts it to the owner.
