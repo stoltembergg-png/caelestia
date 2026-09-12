@@ -193,7 +193,17 @@ Item {
     readonly property real hideGap: Math.max(root.sensorHeight, Math.round(Config.border.thickness))
     readonly property real hideShift: (root.implicitHeight + root.hideGap) * root.offsetScale
 
-    anchors.bottomMargin: -root.hideShift
+    // Sink no aro inferior. O `Panels` do core tem bottomMargin = borderThickness e
+    // o `PanelBg` posiciona o blob em `panel.y + borderThickness`, então a base do
+    // painel parava ~borderThickness (10px) acima da borda real, deixando os cantos
+    // inferiores arredondados "soltos" (pill flutuante). Descer a base por essa
+    // espessura faz a superfície tocar o rodapé do ecrã, sobrepõe o aro e o
+    // smoothing (Config.border.smoothing) funde os dois; o cornerFill do core
+    // enterra os cantos inferiores sobre a borda (deixa de haver pill solta).
+    // Sem aro em fullscreen (borderThickness = 0), não há o que afundar.
+    readonly property real aroSink: root.fullscreen ? 0 : Math.round(Config.border.thickness)
+
+    anchors.bottomMargin: -root.hideShift - root.aroSink
 
     // ---- Publica estado para o core (Exclusions) ------------------------
     function publishState() {
