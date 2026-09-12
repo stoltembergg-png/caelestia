@@ -42,15 +42,34 @@ Item {
         spacing: Tokens.spacing.small
 
         // -------------------------------------------------------------- //
-        // Header (superfície própria, legível sobre o fundo translúcido)
+        // Header contínuo: o título vive na mesma linguagem translúcida do
+        // drawer, sem cartão inset/raio. O scrim tPalette só reforça contraste
+        // junto ao topo e se dissolve no corpo, preservando wallpaper e matiz.
         // -------------------------------------------------------------- //
-        StyledRect {
+        Item {
             Layout.fillWidth: true
-            Layout.leftMargin: Tokens.spacing.extraSmall
-            Layout.rightMargin: Tokens.spacing.extraSmall
             implicitHeight: header.implicitHeight + Tokens.padding.small * 2
-            radius: Tokens.rounding.medium
-            color: Colours.palette.m3surfaceContainer
+
+            Rectangle {
+                anchors.fill: parent
+                color: "transparent"
+                gradient: Gradient {
+                    orientation: Gradient.Vertical
+
+                    GradientStop {
+                        position: 0
+                        color: Qt.alpha(Colours.tPalette.m3surfaceContainerLow, Colours.tPalette.m3surfaceContainerLow.a * 0.45)
+                    }
+                    GradientStop {
+                        position: 0.58
+                        color: Qt.alpha(Colours.tPalette.m3surfaceContainerLow, Colours.tPalette.m3surfaceContainerLow.a * 0.45)
+                    }
+                    GradientStop {
+                        position: 1
+                        color: Qt.alpha(Colours.tPalette.m3surfaceContainerLow, 0)
+                    }
+                }
+            }
 
             RowLayout {
                 id: header
@@ -60,43 +79,43 @@ Item {
                 anchors.rightMargin: Tokens.padding.small
                 spacing: Tokens.spacing.extraSmall
 
-            IconButton {
-                visible: root.showChat
-                type: IconButton.Text
-                icon: "arrow_back"
-                onClicked: WhatsAppClient.closeChat()
-            }
+                IconButton {
+                    visible: root.showChat
+                    type: IconButton.Text
+                    icon: "arrow_back"
+                    onClicked: WhatsAppClient.closeChat()
+                }
 
-            ContactAvatar {
-                Layout.alignment: Qt.AlignVCenter
-                visible: root.showChat
-                size: 28
-                name: WhatsAppClient.currentChatName
-                jid: WhatsAppClient.currentChat
-                avatar: WhatsAppClient.currentChatAvatar
-            }
+                ContactAvatar {
+                    Layout.alignment: Qt.AlignVCenter
+                    visible: root.showChat
+                    size: 28
+                    name: WhatsAppClient.currentChatName
+                    jid: WhatsAppClient.currentChat
+                    avatar: WhatsAppClient.currentChatAvatar
+                }
 
-            MaterialIcon {
-                visible: !root.showChat
-                text: "forum"
-                color: Colours.palette.m3primary
-                fontStyle: Tokens.font.icon.medium
-            }
+                MaterialIcon {
+                    visible: !root.showChat
+                    text: "forum"
+                    color: Colours.palette.m3primary
+                    fontStyle: Tokens.font.icon.medium
+                }
 
-            StyledText {
-                Layout.fillWidth: true
-                text: root.showChat ? WhatsAppClient.currentChatName : "WhatsApp"
-                font: Tokens.font.title.small
-                elide: Text.ElideRight
-                maximumLineCount: 1
-            }
+                StyledText {
+                    Layout.fillWidth: true
+                    text: root.showChat ? WhatsAppClient.currentChatName : "WhatsApp"
+                    font: Tokens.font.title.small
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                }
 
-            IconButton {
-                visible: root.paired && !root.showChat
-                type: IconButton.Text
-                icon: "logout"
-                onClicked: WhatsAppClient.logout()
-            }
+                IconButton {
+                    visible: root.paired && !root.showChat
+                    type: IconButton.Text
+                    icon: "logout"
+                    onClicked: WhatsAppClient.logout()
+                }
             }
         }
 
