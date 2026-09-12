@@ -55,6 +55,9 @@ Item {
     readonly property real itemSpacing: panel.s(panel.editMode ? 10 : 8)
     readonly property real itemSizeRaw: Math.max(16, panel.s(panel.elementSize))
     readonly property int totalItemCount: dockAppsModel.count
+    // Sem apps fixados: reserva um slot para a "pílula" com o botão "+".
+    readonly property bool empty: panel.totalItemCount === 0
+    readonly property int layoutItemCount: panel.empty ? 1 : panel.totalItemCount
 
     // Encolhe os ícones se não couberem na largura do ecrã (sem clipping).
     readonly property real availableWidth: (Window.window && Window.window.width > 0) ? Window.window.width - panel.s(80) : 0
@@ -63,14 +66,21 @@ Item {
         : panel.itemSizeRaw
     readonly property real itemSize: Math.min(panel.itemSizeRaw, panel.maxItemSize)
     readonly property real itemStep: panel.itemSize + panel.itemSpacing
-    readonly property real contentLength: panel.totalItemCount > 0
-        ? panel.totalItemCount * panel.itemSize + (panel.totalItemCount - 1) * panel.itemSpacing
+    readonly property real contentLength: panel.layoutItemCount > 0
+        ? panel.layoutItemCount * panel.itemSize + (panel.layoutItemCount - 1) * panel.itemSpacing
         : 0
 
     readonly property real hoverDelta: Math.max(0.0, panel.hoverScale - 1.0)
 
-    implicitWidth: Math.round(panel.contentLength + panel.pad * 2)
-    implicitHeight: Math.round(panel.itemSize + panel.pad * 2)
+    // Altura da dock e largura mínima da pílula vazia (~2.5x a altura).
+    readonly property real pillHeight: panel.itemSize + panel.pad * 2
+    readonly property real minPillWidth: panel.pillHeight * 2.5
+
+    // Continua a crescer com elementSize/ícones quando há apps; nunca ~0.
+    implicitWidth: panel.empty
+        ? Math.round(panel.minPillWidth)
+        : Math.round(panel.contentLength + panel.pad * 2)
+    implicitHeight: Math.round(panel.pillHeight)
 
     // ---- Modelo de apps fixados ----------------------------------------
     ListModel {
@@ -679,6 +689,70 @@ Item {
                             }
                         }
                     }
+                }
+            }
+
+            // Pílula vazia: botão "+" que abre o app-picker (reutiliza o setEditMode).
+            Item {
+                id: addButton
+
+                anchors.centerIn: parent
+                width: panel.itemSize
+                height: panel.itemSize
+                visible: panel.empty
+
+                readonly property point center: dockContainer.mapFromItem(addButton, addButton.width / 2, addButton.height / 2)
+                readonly property real cursorDistance: {
+                    if (!dockContainer.hoverActive)
+                        return 1000000;
+                    return Math.hypot(dockContainer.cursorX - center.x, dockContainer.cursorY - center.y);
+                }
+                readonly property real influence: {
+                    const radius = panel.itemSize * 1.4;
+                    const d = cursorDistance;
+                    if (d >= radius)
+                        return 0.0;
+                    const t = 1.0 - d / radius;
+                    return t * t * (3.0 - 2.0 * t);
+                }
+                property real scaleAnim: 1.0 + panel.hoverDelta * influence
+
+                Behavior on scaleAnim {
+                    enabled: panel.animations
+
+                    Anim {
+                        type: Anim.FastSpatial
+                    }
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Math.round(panel.itemSize * 0.3)
+                    color: addMa.pressed
+                        ? Qt.darker(Colours.tPalette.m3surfaceContainer, 1.12)
+                        : (addMa.containsMouse ? Qt.lighter(Colours.tPalette.m3surfaceContainer, 1.12) : Colours.tPalette.m3surfaceContainer)
+                    scale: addButton.scaleAnim
+                    transformOrigin: Item.Center
+
+                    Behavior on color {
+                        ColorAnimation { duration: panel.animations ? 180 : 0 }
+                    }
+
+                    MaterialIcon {
+                        anchors.centerIn: parent
+                        text: "add"
+                        color: Colours.palette.m3onSurface
+                        fontStyle: Tokens.font.icon.medium
+                    }
+                }
+
+                MouseArea {
+                    id: addMa
+
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: panel.setEditMode(true)
                 }
             }
         }
