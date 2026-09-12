@@ -124,8 +124,15 @@ Estáveis e parte do contrato — clientes podem (e devem) ramificar por `code`.
 |---|---|---|
 | `parse_error`        | A linha não é JSON válido, ou um campo tem tipo JSON incompatível. | `{"id":1,"method":` ; `id` como string ; linha gigante |
 | `invalid_request`    | JSON válido, envelope inválido. | falta `id`; falta/`method` vazio; `method` > 64 chars; `params` não é objeto/`null` |
-| `method_not_found`   | Método não registrado no daemon. | `foo.bar`; métodos ainda não implementados (fase 2.3+) |
+| `method_not_found`   | Método não registrado no daemon. | `foo.bar`; método de fase futura |
 | `internal_error`     | Falha interna/`panic` no handler. | bug de handler; resultado não serializável |
+| `not_paired`         | Não há sessão pareada para executar a operação. | `message.send`/`chat.messages` antes do login; `chats.list` sem device |
+| `not_found`          | O recurso pedido não existe localmente. | `chat.open` de um JID desconhecido |
+| `send_failed`        | A operação de rede com o WhatsApp falhou. | `message.send` com a conexão caída; `message.read` recusado |
+
+`parse_error`, `invalid_request` e `method_not_found` são emitidos pela camada
+de protocolo; `not_paired`, `not_found` e `send_failed` são específicos dos
+métodos de domínio (fase 2.4) e também são estáveis.
 
 O daemon **nunca** derruba o processo por payload inválido. Existe ainda um
 orçamento de erros consecutivos por conexão (padrão: 16, ajustável por
@@ -265,26 +272,179 @@ Response:
 {"id":6,"result":{"logged_out":true,"state":"needs_pairing"}}
 ```
 
+### `chats.list` (fase 2.4)
+
+Lista as conversas locais, ordenadas por `timestamp` decrescente (sem
+mensagem vai por último). Lê o banco local; ainda assim exige uma sessão
+pareada (`not_paired` sem device).
+
+Request:
+
+```json
+{"id":10,"method":"chats.list","params":{"limit":50}}
+```
+
+`limit` é opcional (padrão 100, máximo 1000).
+
+Response:
+
+```json
+{
+  "id": 10,
+  "result": [
+    {
+      "jid": "5511999999999@s.whatsapp.net",
+      "kind": "dm",
+      "name": "Fulano",
+      "lastMessage": "cheguei!",
+      "timestamp": "1730000000000",
+      "unread": 2
+    }
+  ]
+}
+```
+
+Campos: `jid`, `kind` (`dm`/`group`), `name` (contato > push > JID),
+`lastMessage` (preview), `timestamp` (**string** de milissegundos; `""` quando
+desconhecido), `unread`. `lastMessageId` aparece quando conhecido.
+
+### `chat.open` (fase 2.4)
+
+Metadados de uma conversa. Erros: `invalid_request` (sem `jid`),
+`not_found` (JID desconhecido), `not_paired`.
+
+Request:
+
+```json
+{"id":11,"method":"chat.open","params":{"jid":"5511999999999@s.whatsapp.net"}}
+```
+
+Response: um único objeto com os mesmos campos de `chats.list`.
+
+### `chat.messages` (fase 2.4)
+
+Histórico de uma conversa, **mais recentes primeiro**. `limit` é opcional
+(padrão 100); `before` é um timestamp em milissegundos (número **ou** string) e
+retorna apenas mensagens estritamente mais antigas.
+
+Request:
+
+```json
+{"id":12,"method":"chat.messages","params":{"jid":"5511999999999@s.whatsapp.net","limit":50,"before":"1730000000000"}}
+```
+
+Response:
+
+```json
+{
+  "id": 12,
+  "result": [
+    {
+      "id": "3EB0...",
+      "chat": "5511999999999@s.whatsapp.net",
+      "sender": "5511999999999@s.whatsapp.net",
+      "fromMe": false,
+      "timestamp": "1730000001000",
+      "type": "text",
+      "text": "oi",
+      "quotedId": "",
+      "edited": false,
+      "deleted": false,
+      "status": ""
+    }
+  ]
+}
+```
+
+`type` é uma classificação grosseira (`text`, `image`, `video`, `audio`,
+`document`, `sticker`, `location`, `contact`, `reaction`, `protocol`,
+`unknown`). `status` é `sent`/`delivered`/`read` para mensagens enviadas.
+
+### `message.send` (fase 2.4)
+
+Envia texto. Erros: `not_paired`, `invalid_request` (JID/texto inválidos),
+`send_failed`.
+
+Request:
+
+```json
+{"id":13,"method":"message.send","params":{"jid":"5511999999999@s.whatsapp.net","text":"olá"}}
+```
+
+Response:
+
+```json
+{"id":13,"result":{"id":"3EB0...","timestamp":"1730000001000"}}
+```
+
+A mensagem enviada é persistida localmente (aparece em `chat.messages`).
+
+### `message.reply` (fase 2.4)
+
+Igual a `message.send`, mas citando a mensagem `id` (via `ContextInfo`). O
+`Participant` do contexto é o remetente da mensagem citada, quando conhecido.
+
+Request:
+
+```json
+{"id":14,"method":"message.reply","params":{"jid":"5511999999999@s.whatsapp.net","id":"3EB0...","text":"concordo"}}
+```
+
+### `message.read` (fase 2.4)
+
+Marca como lidas as mensagens recebidas pendentes do chat (`MarkRead` das
+pendentes, agrupadas por remetente) e zera o contador de não lidas. Erros:
+`not_paired`, `invalid_request`, `send_failed`.
+
+Request:
+
+```json
+{"id":15,"method":"message.read","params":{"jid":"5511999999999@s.whatsapp.net"}}
+```
+
+Response:
+
+```json
+{"id":15,"result":{"read":2}}
+```
+
+### `contacts.search` (fase 2.4)
+
+Busca contatos locais por `LIKE` sobre JID/nome. `limit` opcional.
+
+Request:
+
+```json
+{"id":16,"method":"contacts.search","params":{"query":"fulano","limit":20}}
+```
+
+Response:
+
+```json
+{
+  "id": 16,
+  "result": [
+    {"jid":"5511999999999@s.whatsapp.net","name":"Fulano","firstName":"","fullName":"Fulano de Tal","pushName":"Fulano"}
+  ]
+}
+```
+
 ---
 
-## 7. Métodos e eventos planejados (fase 2.4+)
+## 7. Métodos e eventos planejados (fase 2.5+)
 
 Ainda **não** implementados; um request a eles responde `method_not_found`. A
 tabela congela os nomes para o contrato não mudar quando forem implementados.
-(`auth.start`, `auth.status` e `auth.logout` já estão implementados — ver §6.)
 
-Métodos (de `ARQUITETURA.md` §3.3):
+Já implementados: `auth.start|status|logout` e, na fase 2.4, `chats.list`,
+`chat.open`, `chat.messages`, `message.send`, `message.reply`, `message.read` e
+`contacts.search` (ver §6).
+
+Métodos restantes (de `ARQUITETURA.md` §3.3):
 
 | Método | Descrição |
 |---|---|
-| `chats.list` | lista de conversas |
-| `chat.open` | abre uma conversa |
-| `chat.messages` | histórico recente/paginado de uma conversa |
-| `message.send` | envia texto |
-| `message.reply` | responde citando uma mensagem |
 | `message.react` | reação |
-| `message.read` | marca como lido |
-| `contacts.search` | busca de contatos |
 | `media.download` | baixa mídia para o cache e devolve caminho/metadados |
 | `media.send` | envia mídia a partir de um caminho local |
 | `presence.typing` | envia/atualiza indicador de digitação |
@@ -302,7 +462,11 @@ Implementados na fase 2.3:
 | `auth.error` | erro de pareamento (`{message}`): timeout, QR inválido, client outdated… |
 | `connection.updated` | estado da conexão (`{state, since}`), emitido a cada transição |
 
-Planejados (fase 2.4+):
+> A fase 2.4 persiste `Message`/`Receipt`/`HistorySync`/`Contact`/`GroupInfo`
+> nas tabelas `cae_*`, mas **ainda não** publica os eventos de domínio abaixo;
+> eles serão emitidos quando o frontend em tempo real for implementado.
+
+Planejados (fase 2.5+):
 
 | Evento | Descrição |
 |---|---|
@@ -345,8 +509,24 @@ Fluxo de login por QR:
 Erro:
 
 ```
-→ {"id":9,"method":"message.send","params":{"chat":"..."}}
-← {"id":9,"error":{"code":"method_not_found","message":"unknown method: message.send"}}
+→ {"id":9,"method":"foo.bar","params":{}}
+← {"id":9,"error":{"code":"method_not_found","message":"unknown method: foo.bar"}}
+```
+
+Erro de domínio (sem sessão):
+
+```
+→ {"id":10,"method":"chats.list","params":{"limit":50}}
+← {"id":10,"error":{"code":"not_paired","message":"whatsapp: no paired device"}}
+```
+
+Exemplo equivalente com a CLI `cwctl` (ver `docs/BUILD.md`):
+
+```sh
+cwctl --socket /tmp/cw.sock status
+cwctl --socket /tmp/cw.sock chats --limit 20
+cwctl --socket /tmp/cw.sock messages '5511999999999@s.whatsapp.net' --limit 50
+cwctl --socket /tmp/cw.sock send '5511999999999@s.whatsapp.net' 'olá!'
 ```
 
 Exemplo de cliente Python (UDS, usado no smoke manual):

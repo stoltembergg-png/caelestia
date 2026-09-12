@@ -66,6 +66,7 @@ func run(args []string) error {
 		slog.String("log_level", level.String()),
 	)
 	logger.Info("database ready", slog.String("path", dbPath))
+	repo := database.NewRepo(db)
 
 	// The whatsmeow store shares the daemon's SQLite handle. Service.New runs
 	// container.Upgrade and, if a session exists, connects in the background.
@@ -76,9 +77,13 @@ func run(args []string) error {
 	}
 	logger.Info("whatsapp service ready", slog.String("state", string(svc.State())))
 
+	// Persistence pipeline: a second, non-blocking handler feeding a single
+	// worker that writes Message/Receipt/HistorySync/Contact/GroupInfo events.
+	persister := svc.EnablePersistence(repo)
+
 	startedAt := time.Now()
 	ipcServer := ipc.NewServer(cfg.Socket, logger)
-	registerHandlers(ipcServer, svc, cfg, startedAt)
+	registerHandlers(ipcServer, svc, repo, cfg, logger, startedAt)
 
 	if err := ipcServer.Start(); err != nil {
 		_ = svc.Close()
@@ -105,8 +110,10 @@ func run(args []string) error {
 	sig := <-sigCh
 	logger.Info("shutdown signal received", slog.String("signal", sig.String()))
 
-	// Stop the whatsmeow service first (disconnect, drain the pump), then the
-	// IPC server and finally the shared database.
+	// Stop the persistence worker first (drain pending writes), then the
+	// whatsmeow service (disconnect, drain the pump), then the IPC server and
+	// finally the shared database.
+	persister.Close()
 	if err := svc.Close(); err != nil {
 		logger.Warn("close whatsapp service", slog.String("error", err.Error()))
 	}
@@ -125,8 +132,11 @@ func run(args []string) error {
 	return nil
 }
 
-// registerHandlers installs the ping/status/auth methods.
-func registerHandlers(s *ipc.Server, svc *whatsapp.Service, cfg *config.Config, startedAt time.Time) {
+// registerHandlers installs the ping/status/auth methods and the
+// chats/messages/contacts method set.
+func registerHandlers(s *ipc.Server, svc *whatsapp.Service, repo *database.Repo, cfg *config.Config, logger *slog.Logger, startedAt time.Time) {
+	whatsapp.NewMethods(svc, repo, logger).Register(s)
+
 	s.Register("ping", func(_ context.Context, _ *ipc.Client, _ json.RawMessage) (any, *ipc.Error) {
 		return map[string]any{"pong": true, "version": version}, nil
 	})
