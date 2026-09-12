@@ -112,6 +112,10 @@ type Service struct {
 
 	loginMu     sync.Mutex
 	loginActive bool
+	// loginCancel cancels the context handed to GetQRChannel/consumeQRCodes so
+	// cancelling a login (auth.cancel/logout/Close) unblocks a QR channel that
+	// whatsmeow never closes on its own.
+	loginCancel context.CancelFunc
 
 	banMu    sync.Mutex
 	banUntil time.Time
@@ -119,10 +123,23 @@ type Service struct {
 	inbox     chan *internalEvent
 	ipcEvents chan Event
 
+	// emitMu guards emitClosed. emit holds it for reading for the whole send so
+	// that Close can atomically mark the channel closed and only then close it,
+	// which makes a concurrent emit return instead of panicking on a closed
+	// channel.
+	emitMu     sync.RWMutex
+	emitClosed bool
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
 	wg     sync.WaitGroup
+
+	// wgMu/closing serialize worker registration with Close: goTracked refuses
+	// to Add after Close marks the service as closing, so a wg.Add can never
+	// race a zero-counter wg.Wait during shutdown.
+	wgMu    sync.Mutex
+	closing bool
 
 	closeOnce sync.Once
 	startOnce sync.Once
@@ -281,7 +298,9 @@ type AuthStatus struct {
 	BanUntil time.Time
 }
 
-// AuthStatus returns the current authentication snapshot.
+// AuthStatus returns the current authentication snapshot. A ban whose expiry
+// already passed is reported as cleared (and forgotten), so a stale
+// `banned_until` is never exposed after the ban has lapsed.
 func (s *Service) AuthStatus() AuthStatus {
 	st := AuthStatus{State: s.State(), LoggedIn: s.IsLoggedIn()}
 	if d := s.currentDevice(); d != nil {
@@ -291,9 +310,20 @@ func (s *Service) AuthStatus() AuthStatus {
 		st.PushName = d.PushName
 	}
 	s.banMu.Lock()
+	if !s.banUntil.IsZero() && !time.Now().Before(s.banUntil) {
+		s.banUntil = time.Time{}
+	}
 	st.BanUntil = s.banUntil
 	s.banMu.Unlock()
 	return st
+}
+
+// clearBan forgets a temporary ban. It is called when the session reconnects
+// normally or is logged out, so an old ban never lingers in AuthStatus.
+func (s *Service) clearBan() {
+	s.banMu.Lock()
+	s.banUntil = time.Time{}
+	s.banMu.Unlock()
 }
 
 // Connect connects a paired device. It returns ErrNotPaired when there is no
@@ -329,15 +359,49 @@ func (s *Service) Disconnect() {
 
 // Close disconnects the client and stops the internal dispatcher. It never
 // closes the shared *sql.DB: that handle belongs to the caller.
+//
+// The IPC event channel is marked closed under emitMu *before* it is closed,
+// after every producer tracked by wg has stopped, so a concurrent emit can
+// never send on a closed channel.
 func (s *Service) Close() error {
 	s.closeOnce.Do(func() {
 		close(s.done)
 		s.cancel()
+		s.stopLogin()
 		s.Disconnect()
+
+		s.wgMu.Lock()
+		s.closing = true
+		s.wgMu.Unlock()
+
 		s.wg.Wait()
+
+		s.emitMu.Lock()
+		s.emitClosed = true
 		close(s.ipcEvents)
+		s.emitMu.Unlock()
 	})
 	return nil
+}
+
+// goTracked starts fn in a goroutine tracked by s.wg, unless the service has
+// begun shutting down (in which case it returns false and nothing runs). The
+// wgMu/closing handshake is what makes a wg.Add from a concurrent IPC handler
+// safe against Close's wg.Wait.
+func (s *Service) goTracked(fn func()) bool {
+	s.wgMu.Lock()
+	if s.closing {
+		s.wgMu.Unlock()
+		return false
+	}
+	s.wg.Add(1)
+	s.wgMu.Unlock()
+
+	go func() {
+		defer s.wg.Done()
+		fn()
+	}()
+	return true
 }
 
 // dispatchLoop consumes classified events. It is the only place where state
@@ -404,8 +468,15 @@ func (s *Service) setState(next State, reason string) bool {
 	return true
 }
 
-// emit queues an IPC event without blocking forever: Close unblocks it.
+// emit queues an IPC event without blocking forever: Close unblocks it and
+// makes later calls a no-op. Holding emitMu for reading keeps the send and the
+// channel close mutually exclusive.
 func (s *Service) emit(name string, data map[string]any) {
+	s.emitMu.RLock()
+	defer s.emitMu.RUnlock()
+	if s.emitClosed {
+		return
+	}
 	ev := Event{Name: name, Data: data}
 	select {
 	case s.ipcEvents <- ev:

@@ -43,7 +43,13 @@ Causas comuns:
   Verifique `id -u` e `ls -ld ~/.local/share/caelestia-whatsapp`.
 - **`database is locked`**: não deveria ocorrer (writer único + WAL +
   `busy_timeout=10000`). Se ocorrer, garanta que **não há dois daemons**
-  rodando (`pgrep -af caelestia-whatsappd`); o `flock` evita instância dupla.
+  rodando (`pgrep -af caelestia-whatsappd`).
+- **"outra instância já usa este data-dir"**: o daemon adquire
+  `<data-dir>/daemon.lock` com `flock(LOCK_EX|LOCK_NB)` **antes** de abrir o
+  banco e o socket; uma segunda instância apontando para o mesmo `--data-dir`
+  falha com essa mensagem. É o comportamento esperado: pare a instância antiga
+  (`systemctl --user stop caelestia-whatsapp.service`) ou use outro
+  `--data-dir`. O lock é liberado automaticamente quando o processo termina.
 - **Porta/socket em uso por sobra**: o daemon remove um socket órfão antes de
   abrir, mas se outro processo tiver criado o arquivo, veja a seção 3.
 

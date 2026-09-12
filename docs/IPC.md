@@ -129,14 +129,22 @@ Estáveis e parte do contrato — clientes podem (e devem) ramificar por `code`.
 | `not_paired`         | Não há sessão pareada para executar a operação. | `message.send`/`chat.messages` antes do login; `chats.list` sem device |
 | `not_found`          | O recurso pedido não existe localmente. | `chat.open` de um JID desconhecido |
 | `send_failed`        | A operação de rede com o WhatsApp falhou. | `message.send` com a conexão caída; `message.read` recusado |
+| `no_login_active`    | `auth.cancel` chamado sem login em andamento. | cancelar após o pareamento concluir/expirar |
 
 `parse_error`, `invalid_request` e `method_not_found` são emitidos pela camada
-de protocolo; `not_paired`, `not_found` e `send_failed` são específicos dos
-métodos de domínio (fase 2.4) e também são estáveis.
+de protocolo; `not_paired`, `not_found`, `send_failed` e `no_login_active` são
+específicos dos métodos de domínio e também são estáveis.
 
 O daemon **nunca** derruba o processo por payload inválido. Existe ainda um
 orçamento de erros consecutivos por conexão (padrão: 16, ajustável por
 `ipc.WithMaxConsecutiveErrors`); ao estourar, a conexão é fechada.
+
+**Orçamento de erros.** Contam para o orçamento apenas falhas de
+protocolo/transporte: JSON inválido, envelope inválido, `method` inexistente,
+falha ao serializar a resposta ou `panic` no handler. Um **erro de domínio** bem
+formado (`not_paired`, `not_found`, `send_failed`, `no_login_active`, …) é uma
+resposta válida: é devolvido ao cliente normalmente e **reseta** o orçamento,
+como um sucesso. Assim, repetir uma operação inválida não derruba a conexão.
 
 ---
 
@@ -154,6 +162,15 @@ Baseado em `ARQUITETURA.md` §8:
   exposta no IPC.
 - `id` obrigatório, `method` limitado a 64 caracteres, linha limitada a 1 MiB.
 - Escrita serializada por conexão (mutex); broadcast itera uma cópia da lista.
+- Escrita com **deadline** (padrão 5 s, `ipc.WithWriteTimeout`): um cliente que
+  para de ler é fechado em vez de travar o escritor, e uma linha parcial nunca é
+  seguida de outro frame.
+- Limite opcional de conexões (`ipc.WithMaxConns`) e deadline ocioso de leitura
+  opcional (`ipc.WithReadIdleTimeout`, desligado por padrão — um cliente que só
+  aguarda eventos, como `cwctl login`, não é derrubado).
+- Instância única por `--data-dir`: o daemon toma um `flock(LOCK_EX|LOCK_NB)` em
+  `<data-dir>/daemon.lock` antes de abrir o banco/socket e recusa uma segunda
+  instância (ver `TROUBLESHOOTING.md`).
 
 ---
 
@@ -221,6 +238,30 @@ Response (aceito):
 
 Erros: se já existe sessão ou um login já está em andamento, responde
 `invalid_request` (ex.: `whatsapp: already logged in`).
+
+O login em andamento é abortável por `auth.cancel` (abaixo), `auth.logout` ou
+pelo shutdown do daemon; whatsmeow não fecha o canal de QR sozinho, então o
+daemon mantém um contexto cancelável por login.
+
+### `auth.cancel` (fase 2.5)
+
+Cancela um pareamento por QR em andamento. O canal de QR é abandonado e nenhum
+`auth.qr` posterior é emitido. Útil para abortar um `cwctl login` sem reiniciar
+o daemon.
+
+Request:
+
+```json
+{"id":4,"method":"auth.cancel"}
+```
+
+Response:
+
+```json
+{"id":4,"result":{"canceled":true}}
+```
+
+Erro: `no_login_active` quando não há login em andamento.
 
 ### `auth.status` (fase 2.3)
 
@@ -360,6 +401,29 @@ Response:
 `document`, `sticker`, `location`, `contact`, `reaction`, `protocol`,
 `unknown`). `status` é `sent`/`delivered`/`read` para mensagens enviadas.
 
+> **Semântica de persistência (persist).**
+>
+> - **Reações não são mensagens.** Uma reação é gravada apenas como metadado
+>   (tabela `cae_reactions`, chave `(message_id, sender_jid)`); ela **nunca**
+>   cria linha em `cae_messages`, não entra em `chat.messages` e **não** altera
+>   `last_message`/`last_preview` nem o contador `unread`. Emoji vazio remove a
+>   reação.
+> - **Mensagens de protocolo** que não sejam `REVOKE` ou `MESSAGE_EDIT` são
+>   ignoradas por completo: não geram linha `type=protocol` nem incrementam
+>   `unread`. `REVOKE` marca a mensagem como apagada e `MESSAGE_EDIT` atualiza o
+>   texto.
+> - **Unidades de timestamp.** No banco, `cae_messages.timestamp` e
+>   `cae_receipts.ts` são Unix em **milissegundos** (coerentes com os valores
+>   expostos aqui como string). As demais colunas temporais — `created_at`,
+>   `updated_at`, `last_connect_at`, `downloaded_at` — usam segundos
+>   (`unixepoch()`).
+> - **Contatos.** O nome de um contato só é atualizado a partir de mensagens
+>   recebidas; mensagens próprias (`fromMe`) não gravam o nosso push name no
+>   JID do par.
+> - **History sync** aplica cada conversa em uma transação (`Repo.WithTx`)
+>   mantendo a idempotência dos inserts. Priorização/paralelismo do history
+>   sync em relação aos eventos ao vivo fica para antes da F4.
+
 ### `message.send` (fase 2.4)
 
 Envia texto. Erros: `not_paired`, `invalid_request` (JID/texto inválidos),
@@ -410,7 +474,9 @@ Response:
 
 ### `contacts.search` (fase 2.4)
 
-Busca contatos locais por `LIKE` sobre JID/nome. `limit` opcional.
+Busca contatos locais por `LIKE` sobre JID/nome. `limit` opcional. Os curingas
+`%` e `_` digitados na query são tratados **literalmente** (escape `\`), então
+uma busca por `%` não retorna todos os contatos.
 
 Request:
 
@@ -436,9 +502,9 @@ Response:
 Ainda **não** implementados; um request a eles responde `method_not_found`. A
 tabela congela os nomes para o contrato não mudar quando forem implementados.
 
-Já implementados: `auth.start|status|logout` e, na fase 2.4, `chats.list`,
-`chat.open`, `chat.messages`, `message.send`, `message.reply`, `message.read` e
-`contacts.search` (ver §6).
+Já implementados: `auth.start|status|cancel|logout` e, na fase 2.4,
+`chats.list`, `chat.open`, `chat.messages`, `message.send`, `message.reply`,
+`message.read` e `contacts.search` (ver §6).
 
 Métodos restantes (de `ARQUITETURA.md` §3.3):
 

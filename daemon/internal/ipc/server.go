@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -30,6 +31,12 @@ const (
 	// against a stuck/abusive peer and can be tuned with
 	// WithMaxConsecutiveErrors.
 	defaultMaxConsecutiveErrors = 16
+
+	// defaultWriteTimeout bounds a single response/event write so a client that
+	// stops reading can never wedge a connection forever. On expiry the client
+	// is closed (a partial line is never left on the wire). It can be tuned
+	// with WithWriteTimeout.
+	defaultWriteTimeout = 5 * time.Second
 )
 
 // Handler processes one request and returns either a result (marshaled as the
@@ -61,6 +68,41 @@ func WithMaxConsecutiveErrors(n int) Option {
 	}
 }
 
+// WithWriteTimeout bounds a single write to a client. A client that stops
+// reading is then closed instead of blocking the writer forever. Non-positive
+// values are ignored (the default of 5s is kept). Only useful for tests and
+// unusual deployments, hence not part of the documented contract.
+func WithWriteTimeout(d time.Duration) Option {
+	return func(s *Server) {
+		if d > 0 {
+			s.writeTimeout = d
+		}
+	}
+}
+
+// WithMaxConns caps the number of simultaneous client connections. New
+// connections above the cap are accepted and immediately closed with a log
+// line. Non-positive values disable the cap (the default).
+func WithMaxConns(n int) Option {
+	return func(s *Server) {
+		if n >= 0 {
+			s.maxConns = n
+		}
+	}
+}
+
+// WithReadIdleTimeout closes a connection that sends no request line for d.
+// Zero (the default) disables the idle deadline, which matters for clients
+// (e.g. `cwctl login`) that intentionally stay connected without sending new
+// requests while they wait for events.
+func WithReadIdleTimeout(d time.Duration) Option {
+	return func(s *Server) {
+		if d >= 0 {
+			s.readIdleTimeout = d
+		}
+	}
+}
+
 // Server is a Unix domain socket JSON-RPC server. It accepts one connection per
 // client, dispatches request lines to registered handlers and can push events
 // to every connected client with Broadcast.
@@ -72,6 +114,9 @@ type Server struct {
 	logger               *slog.Logger
 	maxLineBytes         int
 	maxConsecutiveErrors int
+	maxConns             int
+	writeTimeout         time.Duration
+	readIdleTimeout      time.Duration
 	peerUID              uint32
 	ctx                  context.Context
 	cancel               context.CancelFunc
@@ -85,7 +130,11 @@ type Server struct {
 	clients  map[*Client]struct{}
 
 	listener net.Listener
-	wg       sync.WaitGroup
+	// bound records whether this server successfully created its socket, so
+	// Close only removes a path it actually owns.
+	bound     bool
+	connCount atomic.Int64
+	wg        sync.WaitGroup
 }
 
 // NewServer creates a Server bound to path. It does not touch the filesystem;
@@ -100,6 +149,7 @@ func NewServer(path string, logger *slog.Logger, opts ...Option) *Server {
 		logger:               logger,
 		maxLineBytes:         DefaultMaxLineBytes,
 		maxConsecutiveErrors: defaultMaxConsecutiveErrors,
+		writeTimeout:         defaultWriteTimeout,
 		peerUID:              uint32(os.Getuid()),
 		ctx:                  ctx,
 		cancel:               cancel,
@@ -164,6 +214,7 @@ func (s *Server) start() error {
 	}
 
 	s.listener = ln
+	s.bound = true
 	s.wg.Add(1)
 	go s.acceptLoop()
 	return nil
@@ -187,6 +238,14 @@ func (s *Server) acceptLoop() {
 			s.logger.Warn("ipc: accept failed", slog.String("error", err.Error()))
 			continue
 		}
+		count := s.connCount.Add(1)
+		if s.maxConns > 0 && count > int64(s.maxConns) {
+			s.connCount.Add(-1)
+			s.logger.Warn("ipc: refusing connection: max connections reached",
+				slog.Int("max_conns", s.maxConns))
+			_ = conn.Close()
+			continue
+		}
 		s.wg.Add(1)
 		go s.handleConn(conn)
 	}
@@ -197,6 +256,7 @@ func (s *Server) acceptLoop() {
 func (s *Server) handleConn(conn net.Conn) {
 	defer s.wg.Done()
 	defer conn.Close()
+	defer s.connCount.Add(-1)
 
 	uid, err := peerUID(conn)
 	if err != nil {
@@ -211,9 +271,23 @@ func (s *Server) handleConn(conn net.Conn) {
 		return
 	}
 
-	c := &Client{conn: conn, logger: s.logger, maxErrors: s.maxConsecutiveErrors}
+	c := &Client{
+		conn:         conn,
+		logger:       s.logger,
+		writeTimeout: s.writeTimeout,
+		maxErrors:    s.maxConsecutiveErrors,
+	}
 	s.addClient(c)
 	defer s.removeClient(c)
+
+	// A connection may be accepted right as Close is iterating the client set.
+	// If Close ran before this client was registered it did not close us, so
+	// check for shutdown before blocking on a read.
+	select {
+	case <-s.done:
+		return
+	default:
+	}
 
 	scanner := bufio.NewScanner(conn)
 	initial := s.maxLineBytes
@@ -222,7 +296,13 @@ func (s *Server) handleConn(conn net.Conn) {
 	}
 	scanner.Buffer(make([]byte, 0, initial), s.maxLineBytes)
 
-	for scanner.Scan() {
+	for {
+		if s.readIdleTimeout > 0 {
+			_ = conn.SetReadDeadline(time.Now().Add(s.readIdleTimeout))
+		}
+		if !scanner.Scan() {
+			break
+		}
 		line := scanner.Bytes()
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
@@ -271,8 +351,17 @@ func (s *Server) dispatch(c *Client, line []byte) bool {
 
 	out := s.invoke(c, h, req)
 	if out.err != nil {
+		// A well-formed domain error (not_paired, not_found, send_failed, …)
+		// is a valid handler outcome: it is reported to the client but must
+		// NOT consume the consecutive-error budget, otherwise a client asking
+		// for an unpaired resource a few times would be disconnected. Only a
+		// handler panic counts as a protocol-level error.
 		c.writeError(req.ID, out.err)
-		return c.noteError()
+		if out.panicked {
+			return c.noteError()
+		}
+		c.noteSuccess()
+		return true
 	}
 	resp, err := EncodeResponse(req.ID, out.value)
 	if err != nil {
@@ -289,19 +378,21 @@ func (s *Server) dispatch(c *Client, line []byte) bool {
 
 // invokeResult is the outcome of a handler call.
 type invokeResult struct {
-	value any
-	err   *Error
+	value    any
+	err      *Error
+	panicked bool
 }
 
 // invoke runs a handler and converts a panic into an internal_error response
-// so that a single bad handler cannot take down the server.
+// so that a single bad handler cannot take down the server. The panicked flag
+// lets dispatch distinguish a bug (error budget) from a normal domain error.
 func (s *Server) invoke(c *Client, h Handler, req *Request) (out invokeResult) {
 	defer func() {
 		if r := recover(); r != nil {
 			s.logger.Error("ipc: handler panic",
 				slog.String("method", req.Method),
 				slog.Any("panic", r))
-			out = invokeResult{err: &Error{Code: ErrorInternal, Message: "internal error"}}
+			out = invokeResult{err: &Error{Code: ErrorInternal, Message: "internal error"}, panicked: true}
 		}
 	}()
 	value, err := h(s.ctx, c, req.Params)
@@ -362,9 +453,13 @@ func (s *Server) Close() error {
 
 		s.wg.Wait()
 
-		if rerr := os.Remove(s.path); rerr != nil && !os.IsNotExist(rerr) {
-			if err == nil {
-				err = fmt.Errorf("ipc: remove socket %q: %w", s.path, rerr)
+		// Only remove a path this server actually created; Close before a
+		// successful Start must never touch the filesystem.
+		if s.bound {
+			if rerr := os.Remove(s.path); rerr != nil && !os.IsNotExist(rerr) {
+				if err == nil {
+					err = fmt.Errorf("ipc: remove socket %q: %w", s.path, rerr)
+				}
 			}
 		}
 	})
@@ -386,15 +481,18 @@ func (s *Server) removeClient(c *Client) {
 // Client is one accepted IPC connection. Writes are serialized so that a
 // handler response and a concurrent Broadcast cannot interleave on the wire.
 type Client struct {
-	conn      net.Conn
-	logger    *slog.Logger
-	writeMu   sync.Mutex
-	maxErrors int
-	errs      int
-	closed    atomic.Bool
+	conn         net.Conn
+	logger       *slog.Logger
+	writeMu      sync.Mutex
+	writeTimeout time.Duration
+	maxErrors    int
+	errs         int
+	closed       atomic.Bool
 }
 
-// writeLine writes one marshaled JSON line, serialized per client.
+// writeLine writes one marshaled JSON line, serialized per client. A write
+// deadline bounds a client that stops reading; on failure the connection is
+// closed so a partially written line can never be followed by another frame.
 func (c *Client) writeLine(line []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
@@ -404,8 +502,18 @@ func (c *Client) writeLine(line []byte) error {
 	buf := make([]byte, 0, len(line)+1)
 	buf = append(buf, line...)
 	buf = append(buf, '\n')
+	if err := c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout)); err != nil {
+		c.close()
+		return err
+	}
 	_, err := c.conn.Write(buf)
-	return err
+	if err != nil {
+		c.close()
+		return err
+	}
+	// Clear the deadline so a later write (e.g. a broadcast) gets its own.
+	_ = c.conn.SetWriteDeadline(time.Time{})
+	return nil
 }
 
 // writeError sends an error response, ignoring transport failures.

@@ -348,3 +348,116 @@ func TestUpsertGroup(t *testing.T) {
 		t.Fatalf("group = %+v, want name=Group A topic=topic", g)
 	}
 }
+
+func TestSearchContactsEscapesWildcards(t *testing.T) {
+	r, ctx := newTestRepo(t)
+
+	for _, c := range []Contact{
+		{JID: "pct@s.whatsapp.net", FullName: "100% real"},
+		{JID: "under@s.whatsapp.net", FullName: "a_b"},
+		{JID: "plain@s.whatsapp.net", FullName: "plain"},
+	} {
+		if err := r.UpsertContact(ctx, c); err != nil {
+			t.Fatalf("UpsertContact(%q): %v", c.JID, err)
+		}
+	}
+
+	// '%' must be literal: it matches only the contact containing a percent
+	// sign, not every contact (which a raw LIKE would do).
+	got, err := r.SearchContacts(ctx, "%", 10)
+	if err != nil {
+		t.Fatalf("SearchContacts(%%): %v", err)
+	}
+	if len(got) != 1 || got[0].JID != "pct@s.whatsapp.net" {
+		t.Fatalf("search %% = %+v, want only pct", got)
+	}
+
+	// '_' must be literal too: it must not match an arbitrary single char.
+	got, err = r.SearchContacts(ctx, "_", 10)
+	if err != nil {
+		t.Fatalf("SearchContacts(_): %v", err)
+	}
+	if len(got) != 1 || got[0].JID != "under@s.whatsapp.net" {
+		t.Fatalf("search _ = %+v, want only under", got)
+	}
+
+	// A normal query still works.
+	got, err = r.SearchContacts(ctx, "plai", 10)
+	if err != nil {
+		t.Fatalf("SearchContacts(plai): %v", err)
+	}
+	if len(got) != 1 || got[0].JID != "plain@s.whatsapp.net" {
+		t.Fatalf("search plai = %+v, want only plain", got)
+	}
+}
+
+func TestReactionUpsertAndDelete(t *testing.T) {
+	r, ctx := newTestRepo(t)
+	mustChat(t, r, ctx, "chat@s.whatsapp.net")
+	mustMessage(t, r, ctx, Message{ID: "m1", ChatJID: "chat@s.whatsapp.net", Timestamp: 1})
+
+	// A reaction for an unknown message is ignored, not an FK error.
+	if err := r.UpsertReaction(ctx, Reaction{MessageID: "ghost", SenderJID: "u@x", Emoji: "👍"}); err != nil {
+		t.Fatalf("UpsertReaction(ghost): %v", err)
+	}
+
+	rec := Reaction{MessageID: "m1", ChatJID: "chat@s.whatsapp.net", SenderJID: "u@s.whatsapp.net", Emoji: "👍", Timestamp: 10}
+	if err := r.UpsertReaction(ctx, rec); err != nil {
+		t.Fatalf("UpsertReaction: %v", err)
+	}
+	// Re-reacting replaces the emoji instead of adding a row.
+	rec.Emoji = "❤️"
+	rec.Timestamp = 20
+	if err := r.UpsertReaction(ctx, rec); err != nil {
+		t.Fatalf("UpsertReaction (replace): %v", err)
+	}
+	got, err := r.ListReactions(ctx, "m1")
+	if err != nil {
+		t.Fatalf("ListReactions: %v", err)
+	}
+	if len(got) != 1 || got[0].Emoji != "❤️" || got[0].Timestamp != 20 {
+		t.Fatalf("reactions = %+v, want one ❤️ at ts 20", got)
+	}
+
+	// An empty emoji deletes the row.
+	if err := r.UpsertReaction(ctx, Reaction{MessageID: "m1", SenderJID: "u@s.whatsapp.net", Emoji: ""}); err != nil {
+		t.Fatalf("UpsertReaction(remove): %v", err)
+	}
+	got, err = r.ListReactions(ctx, "m1")
+	if err != nil {
+		t.Fatalf("ListReactions: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("reactions after remove = %+v, want none", got)
+	}
+}
+
+func TestWithTxCommitAndRollback(t *testing.T) {
+	r, ctx := newTestRepo(t)
+	mustChat(t, r, ctx, "chat@s.whatsapp.net")
+
+	if err := r.WithTx(ctx, func(tx *Repo) error {
+		_, err := tx.InsertMessage(ctx, Message{ID: "tx1", ChatJID: "chat@s.whatsapp.net", Timestamp: 1})
+		return err
+	}); err != nil {
+		t.Fatalf("WithTx commit: %v", err)
+	}
+	if _, err := r.GetMessage(ctx, "tx1"); err != nil {
+		t.Fatalf("GetMessage(tx1): %v", err)
+	}
+
+	// An error inside fn must roll the whole transaction back.
+	wantErr := errors.New("boom")
+	err := r.WithTx(ctx, func(tx *Repo) error {
+		if _, err := tx.InsertMessage(ctx, Message{ID: "tx2", ChatJID: "chat@s.whatsapp.net", Timestamp: 2}); err != nil {
+			return err
+		}
+		return wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("WithTx error = %v, want boom", err)
+	}
+	if _, err := r.GetMessage(ctx, "tx2"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetMessage(tx2) = %v, want ErrNotFound after rollback", err)
+	}
+}

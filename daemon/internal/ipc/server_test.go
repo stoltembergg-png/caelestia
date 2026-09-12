@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -304,5 +305,176 @@ func TestStartFailsWhenSocketDirMissing(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "does not exist") {
 		t.Errorf("error = %v, want it to mention the missing directory", err)
+	}
+}
+
+// TestSlowClientDoesNotBlockOthersOrShutdown wedges one connection (it asks for
+// a payload larger than the socket buffer and never reads) and asserts the
+// write deadline frees the writer: other clients keep working and Close returns
+// promptly.
+func TestSlowClientDoesNotBlockOthersOrShutdown(t *testing.T) {
+	srv, path := newTestServer(t, WithWriteTimeout(200*time.Millisecond))
+	srv.Register("big", func(_ context.Context, _ *Client, _ json.RawMessage) (any, *Error) {
+		return map[string]any{"data": strings.Repeat("x", 4<<20)}, nil
+	})
+
+	slow := dial(t, path)
+	fast := dial(t, path)
+	rf := bufio.NewReader(fast)
+
+	// Make sure the fast client is registered before wedging the slow one.
+	sendLine(t, fast, `{"id":100,"method":"ping"}`)
+	if id := responseID(t, readJSONLine(t, rf)); id != 100 {
+		t.Fatalf("fast warmup id = %d, want 100", id)
+	}
+
+	// The slow client never reads its response.
+	sendLine(t, slow, `{"id":1,"method":"big"}`)
+
+	// Requests on the fast connection are handled on their own goroutine and
+	// must not be stalled by the wedged peer.
+	for i := 0; i < 3; i++ {
+		sendLine(t, fast, `{"id":2,"method":"ping"}`)
+		resp := readJSONLine(t, rf)
+		if id := responseID(t, resp); id != 2 {
+			t.Fatalf("fast ping %d id = %d, want 2", i, id)
+		}
+	}
+
+	// Shutdown closes every client (unblocking the wedged write) and must not
+	// wait for the write timeout to expire serially.
+	done := make(chan error, 1)
+	go func() { done <- srv.Close() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Close hung on a slow client")
+	}
+}
+
+// TestDomainErrorDoesNotConsumeBudget asserts that a well-formed domain error
+// is treated as a valid response for the consecutive-error budget.
+func TestDomainErrorDoesNotConsumeBudget(t *testing.T) {
+	srv, path := newTestServer(t, WithMaxConsecutiveErrors(2))
+	srv.Register("domain.fail", func(_ context.Context, _ *Client, _ json.RawMessage) (any, *Error) {
+		return nil, &Error{Code: "not_paired", Message: "no session"}
+	})
+
+	conn := dial(t, path)
+	r := bufio.NewReader(conn)
+
+	for i := 0; i < 6; i++ {
+		sendLine(t, conn, `{"id":5,"method":"domain.fail"}`)
+		resp := readJSONLine(t, r)
+		if got := errorCode(t, resp); got != "not_paired" {
+			t.Fatalf("iteration %d: code = %q, want not_paired", i, got)
+		}
+	}
+
+	// The connection must survive far more domain errors than the budget.
+	sendLine(t, conn, `{"id":9,"method":"ping"}`)
+	if id := responseID(t, readJSONLine(t, r)); id != 9 {
+		t.Fatalf("ping id = %d, want 9", id)
+	}
+}
+
+// TestProtocolErrorConsumesBudget makes sure the budget still protects the
+// server from malformed/flooding clients.
+func TestProtocolErrorConsumesBudget(t *testing.T) {
+	_, path := newTestServer(t, WithMaxConsecutiveErrors(2))
+	conn := dial(t, path)
+	r := bufio.NewReader(conn)
+
+	sendLine(t, conn, `{"id":1`)
+	if got := errorCode(t, readJSONLine(t, r)); got != ErrorParseError {
+		t.Fatalf("first error = %q, want %q", got, ErrorParseError)
+	}
+	sendLine(t, conn, `{"id":2`)
+	readJSONLine(t, r)
+
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	if _, err := r.ReadBytes('\n'); err == nil {
+		t.Fatal("connection still open after exhausting the protocol error budget")
+	}
+}
+
+// TestBroadcastConcurrentWithClose exercises Broadcast racing with Close under
+// the race detector: it must never panic and must not deadlock.
+func TestBroadcastConcurrentWithClose(t *testing.T) {
+	srv, path := newTestServer(t, WithWriteTimeout(200*time.Millisecond))
+	conn := dial(t, path)
+
+	// Drain the client so broadcasts are not constantly blocked on a full
+	// socket buffer (the point is concurrency with Close, not backpressure).
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			if _, err := conn.Read(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 500; j++ {
+				srv.Broadcast("test.event", map[string]any{"j": j})
+			}
+		}()
+	}
+
+	if err := srv.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	wg.Wait()
+}
+
+// TestCloseWithoutStartDoesNotRemovePath guards that Close only removes a
+// socket it actually created.
+func TestCloseWithoutStartDoesNotRemovePath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pre-existing")
+	if err := os.WriteFile(path, []byte("keep me"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := NewServer(path, logger)
+	if err := srv.Close(); err != nil {
+		t.Fatalf("Close before Start: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("Close before Start removed the path: %v", err)
+	}
+}
+
+// TestMaxConnsRefusesExtraConnections checks the connection cap.
+func TestMaxConnsRefusesExtraConnections(t *testing.T) {
+	_, path := newTestServer(t, WithMaxConns(1))
+
+	conn1 := dial(t, path)
+	r1 := bufio.NewReader(conn1)
+	sendLine(t, conn1, `{"id":1,"method":"ping"}`)
+	readJSONLine(t, r1) // conn1 is accepted and counted before conn2 dials
+
+	conn2, err := net.Dial("unix", path)
+	if err != nil {
+		t.Fatalf("dial conn2: %v", err)
+	}
+	defer conn2.Close()
+
+	if err := conn2.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	if _, err := bufio.NewReader(conn2).ReadByte(); err == nil {
+		t.Fatal("over-cap connection was not closed")
 	}
 }

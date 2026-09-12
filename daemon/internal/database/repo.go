@@ -17,18 +17,56 @@ const (
 	MaxListLimit     = 1000
 )
 
+// dbtx is the subset of database/sql used by Repo. It is implemented by both
+// *sql.DB and *sql.Tx, so the same methods run on the pool or inside a
+// transaction opened by WithTx.
+type dbtx interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 // Repo is the data-access layer over the cae_* tables. It never touches the
 // whatsmeow_* tables (those are owned by sqlstore).
 //
 // All methods take a context so callers can cancel long queries; the underlying
 // *sql.DB uses a single writer connection (see Open), which serializes writes.
 type Repo struct {
-	db *sql.DB
+	db dbtx
 }
 
 // NewRepo wraps db in a repository. db must be non-nil and already migrated.
 func NewRepo(db *sql.DB) *Repo {
 	return &Repo{db: db}
+}
+
+// WithTx runs fn inside a single transaction, handing it a Repo bound to that
+// transaction. Every write fn performs is committed atomically (or rolled back
+// on error), which is used by history sync to amortize the per-statement fsync
+// cost. The existing methods stay idempotent, so a retried batch is safe.
+//
+// WithTx must be called on a Repo opened over a *sql.DB; nested calls return an
+// error.
+func (r *Repo) WithTx(ctx context.Context, fn func(*Repo) error) error {
+	db, ok := r.db.(*sql.DB)
+	if !ok {
+		return errors.New("database: WithTx: nested transaction")
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("database: begin transaction: %w", err)
+	}
+	defer func() {
+		// Rollback is a no-op after a successful Commit.
+		_ = tx.Rollback()
+	}()
+	if err := fn(&Repo{db: tx}); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("database: commit transaction: %w", err)
+	}
+	return nil
 }
 
 // Chat is a row of cae_chats.
@@ -89,6 +127,17 @@ type Receipt struct {
 	UserJID   string
 	Type      string
 	TS        int64 // Unix milliseconds
+}
+
+// Reaction is a row of cae_reactions. It is keyed by (MessageID, SenderJID):
+// one current reaction per sender on a message. An empty Emoji removes it.
+type Reaction struct {
+	MessageID string
+	ChatJID   string
+	SenderJID string
+	Emoji     string
+	FromMe    bool
+	Timestamp int64 // Unix milliseconds
 }
 
 // MessageRef is the minimal information needed to send a read receipt.
@@ -315,14 +364,17 @@ func (r *Repo) GetContact(ctx context.Context, jid string) (*Contact, error) {
 
 // SearchContacts returns contacts whose JID or names contain query (case
 // insensitive LIKE), ordered by name. An empty query returns the first page.
+// The user query is escaped so '%' and '_' are matched literally.
 func (r *Repo) SearchContacts(ctx context.Context, query string, limit int) ([]Contact, error) {
-	like := "%" + strings.TrimSpace(query) + "%"
+	trimmed := strings.TrimSpace(query)
+	like := "%" + escapeLike(trimmed) + "%"
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT jid, COALESCE(first_name, ''), COALESCE(full_name, ''),
 		       COALESCE(push_name, ''), COALESCE(business_name, ''),
 		       COALESCE(avatar_id, ''), COALESCE(avatar_path, '')
 		FROM cae_contacts
-		WHERE (? = '%%' OR jid LIKE ? OR full_name LIKE ? OR push_name LIKE ? OR first_name LIKE ?)
+		WHERE (? = '%%' OR jid LIKE ? ESCAPE '\' OR full_name LIKE ? ESCAPE '\'
+		       OR push_name LIKE ? ESCAPE '\' OR first_name LIKE ? ESCAPE '\')
 		ORDER BY (full_name = ''), full_name, push_name, jid
 		LIMIT ?`,
 		like, like, like, like, like, normalizeLimit(limit),
@@ -344,6 +396,24 @@ func (r *Repo) SearchContacts(ctx context.Context, query string, limit int) ([]C
 		return nil, fmt.Errorf("database: iterate contacts: %w", err)
 	}
 	return contacts, nil
+}
+
+// escapeLike escapes the LIKE metacharacters ('%', '_' and the escape
+// character itself) so a user query is matched literally. Callers must pair it
+// with ESCAPE '\' in the SQL.
+func escapeLike(s string) string {
+	if !strings.ContainsAny(s, `\%_`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 4)
+	for _, r := range s {
+		if r == '\\' || r == '%' || r == '_' {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // UpsertGroup inserts or refines a group. Empty fields never overwrite known
@@ -574,6 +644,78 @@ func (r *Repo) InsertReceipt(ctx context.Context, rec Receipt) error {
 		return fmt.Errorf("database: insert receipt: %w", err)
 	}
 	return nil
+}
+
+// UpsertReaction inserts or replaces the current reaction of a sender on a
+// message. An empty emoji means the reaction was removed and deletes the row.
+// It is a no-op when the target message does not exist (reactions may race
+// ahead of history sync), mirroring InsertReceipt.
+func (r *Repo) UpsertReaction(ctx context.Context, x Reaction) error {
+	if x.MessageID == "" || x.SenderJID == "" {
+		return nil
+	}
+	if strings.TrimSpace(x.Emoji) == "" {
+		return r.DeleteReaction(ctx, x.MessageID, x.SenderJID)
+	}
+	fromMe := 0
+	if x.FromMe {
+		fromMe = 1
+	}
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO cae_reactions (message_id, sender_jid, chat_jid, emoji, from_me, timestamp)
+		SELECT ?, ?, ?, ?, ?, ?
+		WHERE EXISTS (SELECT 1 FROM cae_messages WHERE id = ?)
+		ON CONFLICT (message_id, sender_jid) DO UPDATE SET
+			chat_jid  = excluded.chat_jid,
+			emoji     = excluded.emoji,
+			from_me   = excluded.from_me,
+			timestamp = excluded.timestamp`,
+		x.MessageID, x.SenderJID, x.ChatJID, x.Emoji, fromMe, x.Timestamp, x.MessageID,
+	)
+	if err != nil {
+		return fmt.Errorf("database: upsert reaction on %q: %w", x.MessageID, err)
+	}
+	return nil
+}
+
+// DeleteReaction removes a sender's reaction from a message.
+func (r *Repo) DeleteReaction(ctx context.Context, messageID, senderJID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`DELETE FROM cae_reactions WHERE message_id = ? AND sender_jid = ?`,
+		messageID, senderJID,
+	)
+	if err != nil {
+		return fmt.Errorf("database: delete reaction on %q: %w", messageID, err)
+	}
+	return nil
+}
+
+// ListReactions returns the current reactions of a message, ordered by sender.
+func (r *Repo) ListReactions(ctx context.Context, messageID string) ([]Reaction, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT message_id, COALESCE(chat_jid, ''), sender_jid, emoji, from_me, timestamp
+		FROM cae_reactions WHERE message_id = ? ORDER BY sender_jid`, messageID)
+	if err != nil {
+		return nil, fmt.Errorf("database: list reactions %q: %w", messageID, err)
+	}
+	defer rows.Close()
+
+	reactions := make([]Reaction, 0, 4)
+	for rows.Next() {
+		var (
+			x      Reaction
+			fromMe int
+		)
+		if err := rows.Scan(&x.MessageID, &x.ChatJID, &x.SenderJID, &x.Emoji, &fromMe, &x.Timestamp); err != nil {
+			return nil, fmt.Errorf("database: scan reaction: %w", err)
+		}
+		x.FromMe = fromMe != 0
+		reactions = append(reactions, x)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("database: iterate reactions: %w", err)
+	}
+	return reactions, nil
 }
 
 // UnreadTotal returns the sum of unread_count across all chats.

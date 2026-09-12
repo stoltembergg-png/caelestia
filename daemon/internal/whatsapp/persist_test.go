@@ -2,6 +2,8 @@ package whatsapp
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -21,7 +23,8 @@ import (
 )
 
 // newTestPersister builds a Persister over a temporary database without a live
-// client, plus the repository for assertions.
+// client, plus the repository for assertions. The inbox/done channels are
+// initialized so tests can exercise the worker loop.
 func newTestPersister(t *testing.T) (*Persister, *database.Repo, context.Context) {
 	t.Helper()
 
@@ -37,7 +40,13 @@ func newTestPersister(t *testing.T) (*Persister, *database.Repo, context.Context
 	t.Cleanup(cancel)
 
 	svc := &Service{logger: logger, ctx: ctx, cancel: cancel}
-	p := &Persister{svc: svc, repo: repo, logger: logger}
+	p := &Persister{
+		svc:    svc,
+		repo:   repo,
+		logger: logger,
+		inbox:  make(chan any, eventBufferSize*4),
+		done:   make(chan struct{}),
+	}
 	return p, repo, ctx
 }
 
@@ -386,5 +395,186 @@ func TestPersistContactAndGroup(t *testing.T) {
 	}
 	if g, err := repo.GetGroup(ctx, "g@g.us"); err != nil || g.Name != "The Group" {
 		t.Fatalf("group = %+v, %v; want name The Group", g, err)
+	}
+}
+
+// reactionMessage builds a ReactionMessage event targeting targetID.
+func reactionMessage(id, chatJID, senderJID, targetID, emoji string, ts int64) *events.Message {
+	return &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{
+				Chat:   mustJID(chatJID),
+				Sender: mustJID(senderJID),
+			},
+			ID:        id,
+			Timestamp: time.UnixMilli(ts),
+		},
+		Message: &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{
+			Key:  &waCommon.MessageKey{ID: proto.String(targetID)},
+			Text: proto.String(emoji),
+		}},
+	}
+}
+
+func TestPersistReactionDoesNotTouchUnreadOrLastMessage(t *testing.T) {
+	p, repo, ctx := newTestPersister(t)
+
+	// Seed a real message so the chat has last_message/preview/unread state.
+	if err := p.persistMessage(ctx, testMessage("m1", "bob@s.whatsapp.net", "bob@s.whatsapp.net", false, 1000, "hello")); err != nil {
+		t.Fatalf("persistMessage: %v", err)
+	}
+	before, err := repo.GetChat(ctx, "bob@s.whatsapp.net")
+	if err != nil {
+		t.Fatalf("GetChat: %v", err)
+	}
+	if before.UnreadCount != 1 || before.LastMessageID != "m1" {
+		t.Fatalf("seed chat = %+v, want unread 1 and last m1", before)
+	}
+
+	if err := p.persistMessage(ctx, reactionMessage("react1", "bob@s.whatsapp.net", "bob@s.whatsapp.net", "m1", "👍", 2000)); err != nil {
+		t.Fatalf("persistMessage(reaction): %v", err)
+	}
+
+	after, err := repo.GetChat(ctx, "bob@s.whatsapp.net")
+	if err != nil {
+		t.Fatalf("GetChat: %v", err)
+	}
+	if after.UnreadCount != before.UnreadCount {
+		t.Fatalf("unread changed by reaction: %d -> %d", before.UnreadCount, after.UnreadCount)
+	}
+	if after.LastMessageID != before.LastMessageID || after.LastMessageTS != before.LastMessageTS || after.LastPreview != before.LastPreview {
+		t.Fatalf("last message changed by reaction: %+v -> %+v", before, after)
+	}
+
+	// A reaction must not create a message row.
+	msgs, err := repo.ListMessages(ctx, "bob@s.whatsapp.net", 10, 0)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(msgs) != 1 || msgs[0].ID != "m1" {
+		t.Fatalf("messages = %+v, want only m1", msgs)
+	}
+
+	// It is stored as metadata keyed by (message, sender).
+	rs, err := repo.ListReactions(ctx, "m1")
+	if err != nil {
+		t.Fatalf("ListReactions: %v", err)
+	}
+	if len(rs) != 1 || rs[0].Emoji != "👍" || rs[0].SenderJID != "bob@s.whatsapp.net" {
+		t.Fatalf("reactions = %+v, want 👍 from bob", rs)
+	}
+
+	// An empty reaction text removes it.
+	if err := p.persistMessage(ctx, reactionMessage("react2", "bob@s.whatsapp.net", "bob@s.whatsapp.net", "m1", "", 3000)); err != nil {
+		t.Fatalf("persistMessage(reaction removal): %v", err)
+	}
+	rs, err = repo.ListReactions(ctx, "m1")
+	if err != nil {
+		t.Fatalf("ListReactions: %v", err)
+	}
+	if len(rs) != 0 {
+		t.Fatalf("reactions after removal = %+v, want none", rs)
+	}
+}
+
+func TestPersistProtocolMessageIgnored(t *testing.T) {
+	p, repo, ctx := newTestPersister(t)
+
+	protoMsg := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{
+				Chat:   mustJID("bob@s.whatsapp.net"),
+				Sender: mustJID("bob@s.whatsapp.net"),
+			},
+			ID:        "proto1",
+			Timestamp: time.UnixMilli(1000),
+		},
+		Message: &waE2E.Message{ProtocolMessage: &waE2E.ProtocolMessage{
+			Type: waE2E.ProtocolMessage_EPHEMERAL_SETTING.Enum(),
+		}},
+	}
+	if err := p.persistMessage(ctx, protoMsg); err != nil {
+		t.Fatalf("persistMessage(protocol): %v", err)
+	}
+
+	// No row at all: neither a message nor even a chat.
+	if _, err := repo.GetChat(ctx, "bob@s.whatsapp.net"); !errors.Is(err, database.ErrNotFound) {
+		t.Fatalf("GetChat = %v, want ErrNotFound (protocol must not create a chat)", err)
+	}
+	msgs, err := repo.ListMessages(ctx, "bob@s.whatsapp.net", 10, 0)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("messages = %+v, want none for a protocol event", msgs)
+	}
+}
+
+func TestPersistFromMeDoesNotOverwriteContact(t *testing.T) {
+	p, repo, ctx := newTestPersister(t)
+
+	if err := repo.UpsertContact(ctx, database.Contact{JID: "bob@s.whatsapp.net", FullName: "Bob"}); err != nil {
+		t.Fatalf("UpsertContact: %v", err)
+	}
+
+	out := testMessage("m1", "bob@s.whatsapp.net", "me@s.whatsapp.net", true, 1000, "sent")
+	out.Info.PushName = "My Own Name"
+	if err := p.persistMessage(ctx, out); err != nil {
+		t.Fatalf("persistMessage: %v", err)
+	}
+
+	c, err := repo.GetContact(ctx, "bob@s.whatsapp.net")
+	if err != nil {
+		t.Fatalf("GetContact: %v", err)
+	}
+	if c.FullName != "Bob" {
+		t.Fatalf("full name = %q, want Bob", c.FullName)
+	}
+	if c.PushName == "My Own Name" {
+		t.Fatalf("outgoing message wrote our own push name onto the peer: %+v", c)
+	}
+	if _, err := repo.GetContact(ctx, "me@s.whatsapp.net"); !errors.Is(err, database.ErrNotFound) {
+		t.Fatalf("GetContact(me) = %v, want ErrNotFound", err)
+	}
+}
+
+func TestDrainProcessesBufferedEvents(t *testing.T) {
+	p, repo, ctx := newTestPersister(t)
+
+	const n = 5
+	for i := 0; i < n; i++ {
+		p.inbox <- testMessage(fmt.Sprintf("d%d", i), "drain@s.whatsapp.net", "drain@s.whatsapp.net", false, int64(1000+i), "x")
+	}
+	p.drain()
+
+	msgs, err := repo.ListMessages(ctx, "drain@s.whatsapp.net", 100, 0)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(msgs) != n {
+		t.Fatalf("drained %d messages, want %d", len(msgs), n)
+	}
+}
+
+func TestPersisterCloseDrainsInbox(t *testing.T) {
+	p, repo, ctx := newTestPersister(t)
+
+	// Fill the inbox before the worker starts, then shut down: Close must
+	// process everything that was already accepted instead of dropping it.
+	const n = 30
+	for i := 0; i < n; i++ {
+		p.inbox <- testMessage(fmt.Sprintf("close-%02d", i), "close@s.whatsapp.net", "close@s.whatsapp.net", false, int64(1000+i), "x")
+	}
+
+	p.wg.Add(1)
+	go p.run()
+	p.Close()
+
+	msgs, err := repo.ListMessages(ctx, "close@s.whatsapp.net", 100, 0)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(msgs) != n {
+		t.Fatalf("after Close: %d messages, want %d (events were dropped)", len(msgs), n)
 	}
 }

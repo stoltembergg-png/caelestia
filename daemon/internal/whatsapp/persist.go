@@ -130,9 +130,27 @@ func (p *Persister) run() {
 	for {
 		select {
 		case <-p.done:
+			// Shutdown: whatever was already queued must still be written
+			// before the worker exits, otherwise events accepted during the
+			// handler's lifetime are silently dropped.
+			p.drain()
 			return
 		case evt := <-p.inbox:
 			p.process(evt)
+		}
+	}
+}
+
+// drain processes every event already buffered in the inbox and returns as
+// soon as the inbox is momentarily empty. It runs on shutdown so events the
+// handler already accepted are written instead of being dropped.
+func (p *Persister) drain() {
+	for {
+		select {
+		case evt := <-p.inbox:
+			p.process(evt)
+		default:
+			return
 		}
 	}
 }
@@ -173,23 +191,41 @@ func (p *Persister) process(evt any) {
 // bookkeeping. It is idempotent: duplicate MessageIDs are ignored and do not
 // bump the unread counter.
 func (p *Persister) persistMessage(ctx context.Context, m *events.Message) error {
+	return p.persistMessageWithRepo(ctx, p.repo, m)
+}
+
+// persistMessageWithRepo is persistMessage bound to an explicit repository so
+// history sync can run a whole conversation inside one transaction.
+func (p *Persister) persistMessageWithRepo(ctx context.Context, repo *database.Repo, m *events.Message) error {
 	if m == nil || m.Info.ID == "" || m.Info.Chat.IsEmpty() {
 		return nil
 	}
 
+	// Reactions carry no message content. Store only the reaction metadata:
+	// they must never create a cae_messages row nor touch last_message,
+	// preview or the unread counter (see docs/IPC.md §6).
+	if rm := m.Message.GetReactionMessage(); rm != nil {
+		return p.persistReaction(ctx, repo, m, rm)
+	}
+
 	// Revocations and edits mutate an existing message instead of inserting.
+	// Every other protocol message (receipts, ephemeral settings, history sync
+	// notifications, key shares, ...) is not user-visible and is ignored
+	// entirely: no type=protocol row, no unread bump.
 	if pm := m.Message.GetProtocolMessage(); pm != nil {
 		switch pm.GetType() {
 		case waE2E.ProtocolMessage_REVOKE:
 			if id := pm.GetKey().GetID(); id != "" {
-				return p.repo.SetMessageDeleted(ctx, id)
+				return repo.SetMessageDeleted(ctx, id)
 			}
 			return nil
 		case waE2E.ProtocolMessage_MESSAGE_EDIT:
 			if id := pm.GetKey().GetID(); id != "" {
 				text, _ := extractText(pm.GetEditedMessage())
-				return p.repo.SetMessageEdited(ctx, id, text)
+				return repo.SetMessageEdited(ctx, id, text)
 			}
+			return nil
+		default:
 			return nil
 		}
 	}
@@ -204,7 +240,7 @@ func (p *Persister) persistMessage(ctx context.Context, m *events.Message) error
 	// name is passed through: UpsertChat never overwrites a known name.
 	name := ""
 	if kind == "group" {
-		if g, err := p.repo.GetGroup(ctx, chatJID); err == nil {
+		if g, err := repo.GetGroup(ctx, chatJID); err == nil {
 			name = g.Name
 		}
 	}
@@ -213,20 +249,22 @@ func (p *Persister) persistMessage(ctx context.Context, m *events.Message) error
 		if !m.Info.IsFromMe {
 			push = m.Info.PushName
 		}
-		name = p.resolveName(ctx, chatJID, push)
+		name = p.resolveName(ctx, repo, chatJID, push)
 	}
-	if err := p.repo.UpsertChat(ctx, database.Chat{JID: chatJID, Kind: kind, Name: name}); err != nil {
+	if err := repo.UpsertChat(ctx, database.Chat{JID: chatJID, Kind: kind, Name: name}); err != nil {
 		return err
 	}
 
-	// Contacts: the DM peer, or the group participant.
+	// Contacts: the DM peer, or the group participant. Never derive a contact
+	// from our own outgoing message (that would store our own push name under
+	// the peer's JID).
 	senderJID := m.Info.Sender.String()
 	contactJID := chatJID
 	if kind == "group" {
 		contactJID = senderJID
 	}
-	if contactJID != "" && m.Info.PushName != "" {
-		if err := p.repo.UpsertContact(ctx, database.Contact{
+	if !m.Info.IsFromMe && contactJID != "" && m.Info.PushName != "" {
+		if err := repo.UpsertContact(ctx, database.Contact{
 			JID:      contactJID,
 			PushName: m.Info.PushName,
 		}); err != nil {
@@ -246,7 +284,7 @@ func (p *Persister) persistMessage(ctx context.Context, m *events.Message) error
 		QuotedID:  extractQuotedID(m.Message),
 		Status:    initialStatus(m.Info.IsFromMe),
 	}
-	inserted, err := p.repo.InsertMessage(ctx, msg)
+	inserted, err := repo.InsertMessage(ctx, msg)
 	if err != nil {
 		return err
 	}
@@ -254,16 +292,34 @@ func (p *Persister) persistMessage(ctx context.Context, m *events.Message) error
 		return nil
 	}
 
-	if err := p.repo.UpdateChatLastMessage(ctx, chatJID, msg.ID, msg.Timestamp, preview(text, mtype)); err != nil {
+	if err := repo.UpdateChatLastMessage(ctx, chatJID, msg.ID, msg.Timestamp, preview(text, mtype)); err != nil {
 		return err
 	}
 	// Only incoming, newly stored messages increase the unread counter.
 	if !m.Info.IsFromMe {
-		if err := p.repo.IncrementUnread(ctx, chatJID); err != nil {
+		if err := repo.IncrementUnread(ctx, chatJID); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// persistReaction stores a reaction as metadata only, in cae_reactions. It
+// creates no cae_messages row, so the chat list (last_message/preview) and the
+// unread counter are untouched. An empty reaction text removes the reaction.
+func (p *Persister) persistReaction(ctx context.Context, repo *database.Repo, m *events.Message, rm *waE2E.ReactionMessage) error {
+	target := rm.GetKey().GetID()
+	if target == "" {
+		return nil
+	}
+	return repo.UpsertReaction(ctx, database.Reaction{
+		MessageID: target,
+		ChatJID:   m.Info.Chat.String(),
+		SenderJID: m.Info.Sender.String(),
+		Emoji:     rm.GetText(),
+		FromMe:    m.Info.IsFromMe,
+		Timestamp: m.Info.Timestamp.UnixMilli(),
+	})
 }
 
 // persistReceipt records per-user receipts and advances the message status.
@@ -395,9 +451,16 @@ func (p *Persister) persistHistory(ctx context.Context, h *events.HistorySync) e
 		}
 	}
 
+	// Each conversation is applied in one transaction to amortize the
+	// per-statement fsync cost while keeping the inserts idempotent (replaying
+	// a batch remains safe). Prioritizing or parallelizing history sync
+	// relative to live events, in a separate lane, is deferred to the work
+	// before F4.
 	for _, conv := range data.GetConversations() {
-		if err := p.persistConversation(ctx, conv.GetID(), conv.GetDisplayName(), conv.GetName(),
-			conv.GetLastMsgTimestamp(), int(conv.GetUnreadCount()), conv.GetMessages(), h); err != nil {
+		if err := p.repo.WithTx(ctx, func(tx *database.Repo) error {
+			return p.persistConversation(ctx, tx, conv.GetID(), conv.GetDisplayName(), conv.GetName(),
+				conv.GetLastMsgTimestamp(), int(conv.GetUnreadCount()), conv.GetMessages(), h)
+		}); err != nil {
 			return err
 		}
 	}
@@ -420,9 +483,11 @@ func (p *Persister) persistHistory(ctx context.Context, h *events.HistorySync) e
 	return nil
 }
 
-// persistConversation handles a single history conversation.
+// persistConversation handles a single history conversation. repo is the
+// transaction-bound repository supplied by persistHistory.
 func (p *Persister) persistConversation(
 	ctx context.Context,
+	repo *database.Repo,
 	chatJID, displayName, name string,
 	lastTS uint64,
 	unread int,
@@ -445,9 +510,9 @@ func (p *Persister) persistConversation(
 		chatName = name
 	}
 	if chatName == "" {
-		chatName = p.resolveName(ctx, chatJID, "")
+		chatName = p.resolveName(ctx, repo, chatJID, "")
 	}
-	if err := p.repo.UpsertChat(ctx, database.Chat{JID: chatJID, Kind: kind, Name: chatName}); err != nil {
+	if err := repo.UpsertChat(ctx, database.Chat{JID: chatJID, Kind: kind, Name: chatName}); err != nil {
 		return err
 	}
 
@@ -463,23 +528,24 @@ func (p *Persister) persistConversation(
 				slog.String("error", perr.Error()))
 			continue
 		}
-		if err := p.persistMessage(ctx, ev); err != nil {
+		if err := p.persistMessageWithRepo(ctx, repo, ev); err != nil {
 			return err
 		}
 	}
 	if lastTS > 0 {
-		if err := p.repo.SetChatLastTimestamp(ctx, chatJID, int64(lastTS)*1000); err != nil {
+		if err := repo.SetChatLastTimestamp(ctx, chatJID, int64(lastTS)*1000); err != nil {
 			return err
 		}
 	}
 	// History sync is authoritative about the unread count.
-	return p.repo.SetUnread(ctx, chatJID, unread)
+	return repo.SetUnread(ctx, chatJID, unread)
 }
 
 // resolveName returns the best display name for jid: contact (full then first)
-// > push > "" (caller falls back to the JID).
-func (p *Persister) resolveName(ctx context.Context, jid, push string) string {
-	if c, err := p.repo.GetContact(ctx, jid); err == nil {
+// > push > "" (caller falls back to the JID). repo is passed explicitly so the
+// lookup can run inside the caller's transaction.
+func (p *Persister) resolveName(ctx context.Context, repo *database.Repo, jid, push string) string {
+	if c, err := repo.GetContact(ctx, jid); err == nil {
 		if c.FullName != "" {
 			return c.FullName
 		}

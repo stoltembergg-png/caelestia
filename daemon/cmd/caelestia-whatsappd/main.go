@@ -53,6 +53,25 @@ func run(args []string) error {
 		return err
 	}
 
+	// Single-instance guard: take an advisory flock on <data-dir>/daemon.lock
+	// *before* touching the database or the socket. The fd stays open for the
+	// whole process life; the kernel releases it on exit (and Close unlocks
+	// explicitly). Two daemons pointed at the same data-dir would otherwise
+	// fight over SQLite/WAL and the socket.
+	lockPath := filepath.Join(cfg.DataDir, "daemon.lock")
+	lock, err := database.AcquireLock(lockPath)
+	if err != nil {
+		if errors.Is(err, database.ErrLocked) {
+			return fmt.Errorf("outra instância já usa este data-dir %q (daemon.lock preso)", cfg.DataDir)
+		}
+		return err
+	}
+	defer func() {
+		if cerr := lock.Close(); cerr != nil {
+			logger.Warn("close data-dir lock", slog.String("error", cerr.Error()))
+		}
+	}()
+
 	dbPath := filepath.Join(cfg.DataDir, "whatsapp.db")
 	db, err := database.Open(dbPath)
 	if err != nil {
@@ -120,20 +139,24 @@ func run(args []string) error {
 	sig := <-sigCh
 	logger.Info("shutdown signal received", slog.String("signal", sig.String()))
 
-	// Stop the persistence worker first (drain pending writes), then the
-	// whatsmeow service (disconnect, drain the pump), then the IPC server and
-	// finally the shared database.
+	// Shutdown order matters: stop the persistence worker first (drain pending
+	// writes), then the whatsmeow service (disconnect, stop producers and close
+	// its event channel), then the IPC server *before* waiting for the pump so
+	// a client that stopped reading cannot hold the pump hostage, and only at
+	// the end the shared database. The data-dir flock is released by the
+	// deferred lock.Close.
 	persister.Close()
 	if err := svc.Close(); err != nil {
 		logger.Warn("close whatsapp service", slog.String("error", err.Error()))
 	}
-	<-pumpDone
-	logger.Info("whatsapp service stopped")
 
 	if err := ipcServer.Close(); err != nil {
 		return fmt.Errorf("close ipc server: %w", err)
 	}
 	logger.Info("ipc server stopped")
+
+	<-pumpDone
+	logger.Info("whatsapp service stopped")
 
 	if err := db.Close(); err != nil {
 		return fmt.Errorf("close database: %w", err)
@@ -164,12 +187,21 @@ func registerHandlers(s *ipc.Server, svc *whatsapp.Service, repo *database.Repo,
 	})
 
 	s.Register("auth.start", func(ctx context.Context, _ *ipc.Client, _ json.RawMessage) (any, *ipc.Error) {
-		// The provided ctx is the long-lived server context: StartLogin hands it
-		// to GetQRChannel, whose lifetime must outlive this handler invocation.
+		// StartLogin derives its own login context from the service context, so
+		// the QR channel outlives this handler and can be canceled by
+		// auth.cancel/logout/shutdown. The request ctx is only used for the
+		// optional client rebuild.
 		if err := svc.StartLogin(ctx); err != nil {
 			return nil, authError(err)
 		}
 		return map[string]any{"started": true}, nil
+	})
+
+	s.Register("auth.cancel", func(_ context.Context, _ *ipc.Client, _ json.RawMessage) (any, *ipc.Error) {
+		if err := svc.CancelLogin(); err != nil {
+			return nil, authError(err)
+		}
+		return map[string]any{"canceled": true}, nil
 	})
 
 	s.Register("auth.status", func(_ context.Context, _ *ipc.Client, _ json.RawMessage) (any, *ipc.Error) {
@@ -213,6 +245,8 @@ func authError(err error) *ipc.Error {
 	switch {
 	case errors.Is(err, whatsapp.ErrAlreadyLoggedIn), errors.Is(err, whatsapp.ErrLoginInProgress):
 		return &ipc.Error{Code: ipc.ErrorInvalidRequest, Message: err.Error()}
+	case errors.Is(err, whatsapp.ErrNoLoginActive):
+		return &ipc.Error{Code: whatsapp.CodeNoLoginActive, Message: err.Error()}
 	default:
 		return &ipc.Error{Code: ipc.ErrorInternal, Message: err.Error()}
 	}

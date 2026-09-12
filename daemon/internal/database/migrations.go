@@ -75,8 +75,12 @@ var migrations = []migration{
 				updated_at        INTEGER NOT NULL DEFAULT (unixepoch())
 			)`,
 
-			// Messages. id is the whatsmeow MessageID; timestamps are epoch
-			// seconds. media_id is resolved through cae_media.
+			// Messages. id is the whatsmeow MessageID. timestamp is Unix
+			// MILLISECONDS (message events carry ms; history sync converts
+			// seconds to ms before insert). The other temporal columns below
+			// use unixepoch(), i.e. SECONDS: cae_*.updated_at, created_at,
+			// last_connect_at and downloaded_at. media_id is resolved through
+			// cae_media.
 			`CREATE TABLE IF NOT EXISTS cae_messages (
 				id          TEXT PRIMARY KEY,
 				chat_jid    TEXT NOT NULL
@@ -96,6 +100,7 @@ var migrations = []migration{
 			)`,
 
 			// Per-user receipts; one row per (message, user, receipt type).
+			// ts is Unix MILLISECONDS, matching cae_messages.timestamp.
 			`CREATE TABLE IF NOT EXISTS cae_receipts (
 				message_id TEXT NOT NULL
 					REFERENCES cae_messages (id) ON DELETE CASCADE,
@@ -134,6 +139,32 @@ var migrations = []migration{
 				ON cae_chats (last_message_ts DESC)`,
 			`CREATE INDEX IF NOT EXISTS idx_cae_chats_unread
 				ON cae_chats (unread_count) WHERE unread_count > 0`,
+		},
+	},
+	{
+		// Additive migration: reactions are stored in their own table instead
+		// of as cae_messages rows. This is what keeps a reaction from ever
+		// appearing in chat.messages or touching last_message/unread (see
+		// docs/IPC.md §6). cae_messages.reaction_to is kept for links from a
+		// message to a reaction target, but reactions do not create message
+		// rows.
+		version: 2,
+		name:    "reactions metadata",
+		statements: []string{
+			// One current reaction per (message, sender). An empty emoji means
+			// the reaction was removed and the repo deletes the row.
+			`CREATE TABLE IF NOT EXISTS cae_reactions (
+				message_id TEXT NOT NULL
+					REFERENCES cae_messages (id) ON DELETE CASCADE,
+				sender_jid TEXT NOT NULL DEFAULT '',
+				chat_jid   TEXT NOT NULL DEFAULT '',
+				emoji      TEXT NOT NULL DEFAULT '',
+				from_me    INTEGER NOT NULL DEFAULT 0,
+				timestamp  INTEGER NOT NULL DEFAULT 0,
+				PRIMARY KEY (message_id, sender_jid)
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_cae_reactions_chat
+				ON cae_reactions (chat_jid)`,
 		},
 	},
 }

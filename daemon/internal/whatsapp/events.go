@@ -188,6 +188,8 @@ func (s *Service) process(ev *internalEvent) {
 	case evtTemporaryBan:
 		s.handleTemporaryBan(ev)
 	case evtConnected:
+		// A successful connection clears any ban that had expired/been lifted.
+		s.clearBan()
 		if s.setState(ev.state, ev.reason) {
 			s.emit(EventAuthConnected, s.connectedData())
 		}
@@ -213,6 +215,7 @@ func (s *Service) process(ev *internalEvent) {
 func (s *Service) handleLoggedOut(ev *internalEvent) {
 	s.logger.Warn("whatsapp: logged out; deleting local session",
 		slog.String("reason", ev.reason))
+	s.clearBan()
 	if c := s.currentClient(); c != nil {
 		if err := c.DeleteDevice(s.ctx); err != nil {
 			s.logger.Warn("whatsapp: delete device failed", slog.String("error", err.Error()))
@@ -250,7 +253,10 @@ func (s *Service) handleTemporaryBan(ev *internalEvent) {
 }
 
 func (s *Service) scheduleBanRecovery(after time.Duration) {
-	go func() {
+	// Tracked so Close waits for the timer goroutine instead of closing the
+	// event channel underneath a late emit. goTracked refuses to register once
+	// the service is shutting down.
+	s.goTracked(func() {
 		timer := time.NewTimer(after)
 		defer timer.Stop()
 		select {
@@ -265,5 +271,5 @@ func (s *Service) scheduleBanRecovery(after time.Duration) {
 		if err := s.Connect(s.ctx); err != nil {
 			s.logger.Warn("whatsapp: reconnect after ban failed", slog.String("error", err.Error()))
 		}
-	}()
+	})
 }
