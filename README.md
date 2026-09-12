@@ -108,4 +108,6 @@ dono. Sem HTTP/TCP.
 
 ## Licença
 
-A definir (sugestão: AGPL-3.0, compatível com o ecossistema Caelestia/Quickshell e com o MPL-2.0 do whatsmeow).
+**AGPL-3.0** (ver [`LICENSE`](LICENSE)). Escolhida por compatibilidade com o ecossistema
+Caelestia/Quickshell (GPL/AGPL) e por manter o projeto e derivados abertos; o `whatsmeow` é
+MPL-2.0 e pode ser usado como dependência sem alterar esta licença.
