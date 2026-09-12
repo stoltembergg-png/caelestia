@@ -45,6 +45,13 @@ Item {
                 readonly property bool selected: WhatsAppClient.currentChat === row.jid
                 readonly property real badgeWidth: row.unread > 0 ? Math.max(20, badgeLabel.implicitWidth + Tokens.spacing.small) : 0
 
+                // Dia da semana em PT (consistente com "ontem"/"agora"/"min";
+                // evita misturar "ontem" com "Wed"/"Tue" do locale do sistema).
+                function weekdayPT(d): string {
+                    const days = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+                    return days[d.getDay()] || Qt.formatDateTime(d, "ddd");
+                }
+
                 // Hora relativa curta: "agora", "N min", "hh:mm", "ontem",
                 // dia da semana ou data. Timestamp é string de ms (só formata).
                 function timeText(ts): string {
@@ -67,7 +74,7 @@ Item {
                     if (d.getTime() >= startOfToday - 86400000)
                         return "ontem";
                     if (d.getTime() >= startOfToday - 6 * 86400000)
-                        return Qt.formatDateTime(d, "ddd");
+                        return row.weekdayPT(d);
                     return Qt.formatDateTime(d, "dd/MM/yy");
                 }
 

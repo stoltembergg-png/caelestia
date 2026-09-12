@@ -534,6 +534,32 @@ Singleton {
         return undefined;
     }
 
+    // Converte placeholders crus do tipo "[unknown]"/"[Image]"/"[audio]" em
+    // rótulos amigáveis. Texto normal passa intacto.
+    function _normalizePreview(text) {
+        const s = String(text || "").trim();
+        if (!s.length)
+            return "";
+        const m = s.match(/^\[([a-zA-Z]+)\]$/);
+        if (!m)
+            return s;
+        const labels = {
+            "image": "Foto",
+            "photo": "Foto",
+            "video": "Vídeo",
+            "audio": "Áudio",
+            "voice": "Áudio",
+            "document": "Documento",
+            "sticker": "Figurinha",
+            "location": "Localização",
+            "contact": "Contato",
+            "reaction": "Reação",
+            "unknown": "Mensagem",
+            "message": "Mensagem"
+        };
+        return labels[m[1].toLowerCase()] || "Mensagem";
+    }
+
     function _chatRow(c, base) {
         const jid = String(root._field(c, base, "jid") || "");
         const kind = String(root._field(c, base, "kind") || "dm");
@@ -550,7 +576,7 @@ Singleton {
             "jid": jid,
             "kind": kind,
             "name": root._readableName(root._field(c, base, "name"), jid, kind),
-            "lastMessage": String(last === undefined ? "" : last),
+            "lastMessage": root._normalizePreview(last),
             "timestamp": String(root._field(c, base, "timestamp") || ""),
             "unread": Number(unread === undefined ? 0 : unread),
             "avatar": avatar ? String(avatar) : ""
@@ -832,11 +858,14 @@ Singleton {
             "edited": m.edited === true,
             "deleted": m.deleted === true,
             "status": String(m.status || ""),
-            "media": root._mediaObject(m),
+            // Nunca usar null: o ListModel não cria a role quando o valor é null
+            // ("Adding an object with a null member does not create a role"),
+            // o que derruba os delegates (required property sem valor).
+            "media": root._mediaObject(m) || ({}),
             "reactions": JSON.stringify(root._reactionsArray(m.reactions)),
             // Envio otimista de mídia: preview local + estado de upload.
             "localPath": String(m.localPath || ""),
-            "upload": m.upload || null
+            "upload": m.upload || false
         };
     }
 

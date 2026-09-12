@@ -29,7 +29,7 @@ Item {
     property bool _busy: false
     property bool _error: false
 
-    readonly property bool _pending: root.upload !== null && root.upload !== undefined
+    readonly property bool _pending: !!root.upload && String(root.upload.state || "").length > 0
     readonly property bool _sending: root._pending && String(root.upload.state) === "sending"
     readonly property bool _failed: root._pending && String(root.upload.state) === "failed"
     readonly property int _pct: root._pending ? Number(root.upload.pct || 0) : 0

@@ -130,7 +130,7 @@ Item {
 
         anchors.right: root.fromMe ? parent.right : undefined
         anchors.left: root.fromMe ? undefined : parent.left
-        implicitWidth: content.implicitWidth + Tokens.padding.medium * 2
+        implicitWidth: Math.max(content.implicitWidth, statusRow.implicitWidth) + Tokens.padding.medium * 2
         width: Math.min(root.maxWidth, implicitWidth)
         implicitHeight: content.implicitHeight + Tokens.padding.small * 2
         radius: Tokens.rounding.large
@@ -148,8 +148,11 @@ Item {
 
             // Citação
             StyledClippingRect {
+                id: quoteBlock
+
                 Layout.fillWidth: true
                 visible: root.quotedId.length > 0
+                implicitWidth: quoteCol.implicitWidth + Tokens.spacing.small + Tokens.spacing.extraSmall
                 implicitHeight: quoteCol.implicitHeight + Tokens.spacing.small
                 radius: Tokens.rounding.small
                 color: root.fromMe ? Qt.alpha(Colours.palette.m3onPrimaryContainer, 0.14) : Colours.tPalette.m3surfaceContainerHighest
@@ -252,6 +255,7 @@ Item {
 
             Item {
                 Layout.fillWidth: true
+                implicitWidth: statusRow.implicitWidth
                 implicitHeight: statusRow.implicitHeight
 
                 RowLayout {
@@ -268,10 +272,12 @@ Item {
                     }
 
                     StyledText {
+                        Layout.alignment: Qt.AlignVCenter
                         visible: root.timeText().length > 0
                         text: root.timeText()
                         color: root.fromMe ? Colours.palette.m3onPrimaryContainer : Colours.palette.m3onSurfaceVariant
                         font: Tokens.font.label.small
+                        wrapMode: Text.NoWrap
                     }
 
                     MaterialIcon {
