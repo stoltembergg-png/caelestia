@@ -22,7 +22,7 @@ import (
 type fakeClient struct {
 	mu sync.Mutex
 
-	handler      whatsmeow.EventHandler
+	handlers     []whatsmeow.EventHandler
 	connected    bool
 	loggedIn     bool
 	deleted      bool
@@ -30,7 +30,12 @@ type fakeClient struct {
 
 	getQRCalled     bool
 	connectCalled   bool
+	connectCount    int
 	qrBeforeConnect bool
+
+	// handlerCountAtConnect records how many handlers were registered when
+	// Connect ran, so tests can assert handlers-before-Connect.
+	handlerCountAtConnect int
 
 	qrChan     chan whatsmeow.QRChannelItem
 	qrCloseOne sync.Once
@@ -46,14 +51,41 @@ func newFakeClient() *fakeClient {
 
 func (f *fakeClient) AddEventHandler(h whatsmeow.EventHandler) uint32 {
 	f.mu.Lock()
-	f.handler = h
+	f.handlers = append(f.handlers, h)
+	n := len(f.handlers)
 	f.mu.Unlock()
-	return 1
+	return uint32(n)
+}
+
+func (f *fakeClient) handlerCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.handlers)
+}
+
+// dispatchEvent delivers evt to every registered handler, mimicking whatsmeow.
+func (f *fakeClient) dispatchEvent(evt any) {
+	f.mu.Lock()
+	handlers := append([]whatsmeow.EventHandler(nil), f.handlers...)
+	f.mu.Unlock()
+	for _, h := range handlers {
+		h(evt)
+	}
+}
+
+// connectInfo returns whether Connect ran and how many handlers were attached
+// at that moment.
+func (f *fakeClient) connectInfo() (called bool, handlersAtConnect int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.connectCalled, f.handlerCountAtConnect
 }
 
 func (f *fakeClient) Connect() error {
 	f.mu.Lock()
 	f.connectCalled = true
+	f.connectCount++
+	f.handlerCountAtConnect = len(f.handlers)
 	f.connected = true
 	err := f.connectErr
 	f.mu.Unlock()
@@ -156,6 +188,9 @@ func newTestService(t *testing.T, fake *fakeClient) (*Service, *bytes.Buffer) {
 		return &store.Device{}, nil
 	}
 	svc.clientFactory = func(*store.Device, waLog.Logger) waClient { return fake }
+	// Mirror the production wiring: the service registers its handlers through
+	// the shared attachHandlers path when a client is built.
+	svc.attachHandlers(fake)
 
 	t.Cleanup(func() {
 		fake.closeQR()

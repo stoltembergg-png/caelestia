@@ -69,7 +69,10 @@ func run(args []string) error {
 	repo := database.NewRepo(db)
 
 	// The whatsmeow store shares the daemon's SQLite handle. Service.New runs
-	// container.Upgrade and, if a session exists, connects in the background.
+	// container.Upgrade and loads the first device, attaching the state
+	// handler. It does not connect: persistence is attached next and the
+	// background auto-connect is triggered by Service.Start below, so no
+	// handler can miss the first connection.
 	svc, err := whatsapp.New(context.Background(), db, logger)
 	if err != nil {
 		_ = db.Close()
@@ -77,8 +80,8 @@ func run(args []string) error {
 	}
 	logger.Info("whatsapp service ready", slog.String("state", string(svc.State())))
 
-	// Persistence pipeline: a second, non-blocking handler feeding a single
-	// worker that writes Message/Receipt/HistorySync/Contact/GroupInfo events.
+	// Persistence pipeline: the Persister is owned by the service, which
+	// re-registers it on every client it builds (e.g. after a re-pair).
 	persister := svc.EnablePersistence(repo)
 
 	startedAt := time.Now()
@@ -101,6 +104,13 @@ func run(args []string) error {
 			ipcServer.Broadcast(ev.Name, ev.Data)
 		}
 	}()
+
+	// Auto-connect only now: the state handler (New), the persistence handler
+	// (EnablePersistence) and the event pump are all in place, so the first
+	// connection cannot outrun them.
+	if err := svc.Start(context.Background()); err != nil {
+		logger.Warn("whatsapp: start failed", slog.String("error", err.Error()))
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

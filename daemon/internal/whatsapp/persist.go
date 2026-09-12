@@ -60,9 +60,11 @@ type Persister struct {
 	parseWebMessage func(types.JID, *waWeb.WebMessageInfo) (*events.Message, error)
 }
 
-// EnablePersistence attaches a persistence pipeline to the service. It
-// registers a second, non-blocking whatsmeow event handler and starts the
-// worker. Callers must Close the returned Persister before closing the DB.
+// EnablePersistence attaches a persistence pipeline to the service and starts
+// its worker. The Persister is registered on the current client and stored on
+// the Service, so attachHandlersLocked re-registers it on every client built
+// afterwards (e.g. after a logout + re-pair). Callers must Close the returned
+// Persister before closing the DB.
 func (s *Service) EnablePersistence(repo *database.Repo) *Persister {
 	if repo == nil {
 		panic("whatsapp: EnablePersistence with nil repo")
@@ -81,9 +83,17 @@ func (s *Service) EnablePersistence(repo *database.Repo) *Persister {
 		}
 		return c.ParseWebMessage(chatJID, wm)
 	}
-	if c := s.currentClient(); c != nil {
-		c.AddEventHandler(p.handleEvent)
+
+	// Publish the persister and register it on the current client under the
+	// same lock the rebuild path uses: a concurrent rebuild then either sees
+	// the persister and attaches it to the new client, or saw a nil persister
+	// and this call attaches it to the client the rebuild has just installed.
+	s.mu.Lock()
+	s.persister = p
+	if s.client != nil {
+		s.client.AddEventHandler(p.handleEvent)
 	}
+	s.mu.Unlock()
 
 	p.wg.Add(1)
 	go p.run()

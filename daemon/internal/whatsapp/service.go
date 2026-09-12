@@ -98,11 +98,13 @@ type Service struct {
 	clientFactory func(*store.Device, waLog.Logger) waClient
 	firstDevice   func(context.Context) (*store.Device, error)
 
-	// mu guards client and device, which are swapped when the previous device
-	// is deleted and a fresh (unpaired) one has to be created.
-	mu     sync.RWMutex
-	client waClient
-	device *store.Device
+	// mu guards client, device and persister, which are swapped/attached when
+	// the previous device is deleted and a fresh (unpaired) one has to be
+	// created. It also serializes handler registration.
+	mu        sync.RWMutex
+	client    waClient
+	device    *store.Device
+	persister *Persister
 
 	stateMu        sync.RWMutex
 	state          State
@@ -123,6 +125,7 @@ type Service struct {
 	wg     sync.WaitGroup
 
 	closeOnce sync.Once
+	startOnce sync.Once
 
 	// syncDispatch is a test seam: when set, events are processed inline so
 	// tests do not have to poll for state transitions.
@@ -130,8 +133,10 @@ type Service struct {
 }
 
 // New opens the whatsmeow store inside the same SQLite database used by the
-// daemon, upgrades it, loads the first device and builds the client. If a
-// device is already paired it connects in the background.
+// daemon, upgrades it, loads the first device and builds the client with the
+// service state handler already attached. It does NOT connect: callers must
+// attach persistence with EnablePersistence and then trigger the background
+// auto-connect with Start, so no handler can miss the first connection.
 func New(ctx context.Context, db *sql.DB, logger *slog.Logger) (*Service, error) {
 	if db == nil {
 		return nil, errors.New("whatsapp: nil database handle")
@@ -175,27 +180,68 @@ func New(ctx context.Context, db *sql.DB, logger *slog.Logger) (*Service, error)
 		cancel()
 		return nil, fmt.Errorf("whatsapp: get first device: %w", err)
 	}
+	s.mu.Lock()
 	s.device = device
 	s.client = s.clientFactory(device, s.waLog)
-	s.client.AddEventHandler(s.handleEvent)
+	s.attachHandlersLocked(s.client)
+	s.mu.Unlock()
 
 	s.wg.Add(1)
 	go s.dispatchLoop()
 
-	if device.ID != nil {
-		// Connect in the background so a slow/unreachable network never delays
-		// the daemon's startup. Connect() itself handles the state transitions.
-		go func() {
-			if err := s.Connect(s.ctx); err != nil {
-				s.logger.Warn("whatsapp: initial connect failed",
-					slog.String("error", err.Error()))
-			}
-		}()
-	} else {
+	if device.ID == nil {
 		s.setState(StateNeedsPairing, "no device paired")
 	}
 
 	return s, nil
+}
+
+// Start triggers the background auto-connect for an already-paired device. It
+// MUST be called after every event handler is attached (the state handler by
+// New/rebuildClient and the persistence handler by EnablePersistence), which is
+// why New itself no longer connects. The connection attempt runs in its own
+// goroutine so a slow or unreachable network never delays the caller.
+func (s *Service) Start(ctx context.Context) error {
+	if ctx == nil {
+		ctx = s.ctx
+	}
+	d := s.currentDevice()
+	if d == nil || d.ID == nil || d.Deleted {
+		s.setState(StateNeedsPairing, "no device paired")
+		return nil
+	}
+	s.startOnce.Do(func() {
+		go func() {
+			if err := s.Connect(ctx); err != nil {
+				s.logger.Warn("whatsapp: initial connect failed",
+					slog.String("error", err.Error()))
+			}
+		}()
+	})
+	return nil
+}
+
+// attachHandlersLocked is the single registration point for whatsmeow event
+// handlers. It is called for every client the service builds, so the state
+// handler and (when persistence is enabled) the persistence handler can never
+// be left behind by a rebuild. Callers must hold s.mu for writing, which lets a
+// concurrent EnablePersistence/rebuild observe a consistent (client, persister)
+// pair and closes the window where a new client could miss the persister.
+func (s *Service) attachHandlersLocked(c waClient) {
+	if c == nil {
+		return
+	}
+	c.AddEventHandler(s.handleEvent)
+	if s.persister != nil {
+		c.AddEventHandler(s.persister.handleEvent)
+	}
+}
+
+// attachHandlers registers the service handlers on c, taking the lock itself.
+func (s *Service) attachHandlers(c waClient) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.attachHandlersLocked(c)
 }
 
 // State returns the current connection/authentication state.
@@ -424,10 +470,14 @@ func (s *Service) sendPresence() {
 // rebuildClient discards the current client and creates a fresh one bound to a
 // new device. It is needed after the previous device was deleted (logout or an
 // external LoggedOut), because whatsmeow refuses to reuse a deleted device.
+//
+// The state and persistence handlers are re-attached to the new client through
+// the shared attachHandlersLocked path; this is what keeps persistence working
+// after a logout + re-pair.
 func (s *Service) rebuildClient(ctx context.Context) error {
-	s.mu.Lock()
+	s.mu.RLock()
 	old := s.client
-	s.mu.Unlock()
+	s.mu.RUnlock()
 	if old != nil {
 		old.Disconnect()
 	}
@@ -437,11 +487,11 @@ func (s *Service) rebuildClient(ctx context.Context) error {
 		return fmt.Errorf("whatsapp: get device: %w", err)
 	}
 	c := s.clientFactory(device, s.waLog)
-	c.AddEventHandler(s.handleEvent)
 
 	s.mu.Lock()
 	s.device = device
 	s.client = c
+	s.attachHandlersLocked(c)
 	s.mu.Unlock()
 	return nil
 }
