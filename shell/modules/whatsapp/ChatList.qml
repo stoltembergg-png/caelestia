@@ -23,7 +23,7 @@ Item {
         model: WhatsAppClient.chats
         spacing: 2
         topMargin: Tokens.spacing.small
-        bottomMargin: Tokens.padding.medium
+        bottomMargin: Tokens.padding.extraLarge
         boundsBehavior: Flickable.StopAtBounds
         reuseItems: false
 
@@ -85,7 +85,7 @@ Item {
                     id: avatar
 
                     anchors.left: parent.left
-                    anchors.leftMargin: Tokens.padding.small
+                    anchors.leftMargin: Tokens.padding.medium
                     anchors.verticalCenter: parent.verticalCenter
                     size: 44
                     name: row.name

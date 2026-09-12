@@ -16,6 +16,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import qs.extras.whatsapp
 
 Singleton {
     id: root
@@ -54,6 +55,10 @@ Singleton {
     // Sinais de conveniência para a UI.
     signal messageAppended(string jid)
     signal chatsRefreshed()
+
+    // Sobe o notifier junto com o cliente (o monitor D-Bus precisa estar vivo
+    // antes de surgir a primeira notificação).
+    Component.onCompleted: WhatsAppNotifier.warmup()
 
     // ------------------------------------------------------------------ //
     // Socket
@@ -690,6 +695,11 @@ Singleton {
 
         const fromMe = msg.fromMe === true;
         root._bumpChatPreview(jid, root._previewFor(msg), msg.timestamp, !fromMe);
+
+        // Notificação de entrada: o notifier decide se suprime (drawer aberto,
+        // DND, preferência desligada, cooldown por conversa).
+        if (!fromMe)
+            WhatsAppNotifier.notify(jid, root._chatName(jid), root._previewFor(msg));
 
         if (jid === root.currentChat) {
             if (!fromMe)

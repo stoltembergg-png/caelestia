@@ -13,6 +13,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.components.misc
+import qs.extras.whatsapp
 
 Singleton {
     id: root

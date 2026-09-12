@@ -62,9 +62,7 @@ Item {
     ColumnLayout {
         anchors.fill: parent
         anchors.topMargin: Tokens.padding.large
-        anchors.bottomMargin: Tokens.spacing.extraSmall
-        anchors.leftMargin: Tokens.padding.large
-        anchors.rightMargin: Tokens.padding.medium
+        anchors.bottomMargin: Tokens.padding.small
         spacing: Tokens.spacing.small
 
         // -------------------------------------------------------------- //
@@ -72,6 +70,10 @@ Item {
         // -------------------------------------------------------------- //
         RowLayout {
             Layout.fillWidth: true
+            // O corpo ocupa a largura inteira do drawer; só o header é
+            // recuado, para não encostar no canto arredondado.
+            Layout.leftMargin: Tokens.padding.large
+            Layout.rightMargin: Tokens.padding.small
             spacing: Tokens.spacing.extraSmall
 
             IconButton {

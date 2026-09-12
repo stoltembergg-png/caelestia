@@ -88,7 +88,8 @@ Item {
     Timer {
         id: hideTimer
 
-        interval: 300
+        // Atraso configurável no JSON próprio do módulo.
+        interval: Math.max(50, WhatsAppSettings.getInt("hideDelay", 300))
         repeat: false
         onTriggered: root.close()
     }
