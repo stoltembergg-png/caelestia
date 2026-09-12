@@ -16,6 +16,7 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 
 	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/database"
+	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/ipc"
 	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/logging"
 )
 
@@ -58,6 +59,36 @@ type Persister struct {
 	// parseWebMessage is a seam over the client so history sync can be tested
 	// with a fake parser (the real client requires a live session).
 	parseWebMessage func(types.JID, *waWeb.WebMessageInfo) (*events.Message, error)
+
+	// domainMu guards onDomainEvent, which main.go sets right after
+	// EnablePersistence starts the worker.
+	domainMu      sync.RWMutex
+	onDomainEvent func(event string, data any)
+}
+
+// OnDomainEvent registers a callback invoked on the persistence worker after an
+// event has been committed to the database (persist-before-publish). The
+// payloads are IPC-ready and never contain secrets. Passing nil clears it.
+//
+// The callback runs synchronously on the worker, so in production it is bound
+// to ipc.Server.Broadcast, which is bounded by the per-client write deadline.
+func (p *Persister) OnDomainEvent(fn func(event string, data any)) {
+	if p == nil {
+		return
+	}
+	p.domainMu.Lock()
+	p.onDomainEvent = fn
+	p.domainMu.Unlock()
+}
+
+// emitDomain invokes the registered domain-event hook, if any.
+func (p *Persister) emitDomain(name string, data map[string]any) {
+	p.domainMu.RLock()
+	fn := p.onDomainEvent
+	p.domainMu.RUnlock()
+	if fn != nil {
+		fn(name, data)
+	}
 }
 
 // EnablePersistence attaches a persistence pipeline to the service and starts
@@ -189,14 +220,18 @@ func (p *Persister) process(evt any) {
 
 // persistMessage stores one incoming/outgoing message and updates the chat
 // bookkeeping. It is idempotent: duplicate MessageIDs are ignored and do not
-// bump the unread counter.
+// bump the unread counter. Live messages publish domain events; history sync
+// uses persistMessageWithRepo with emit=false so backfill does not flood the
+// frontend with message.received for old messages.
 func (p *Persister) persistMessage(ctx context.Context, m *events.Message) error {
-	return p.persistMessageWithRepo(ctx, p.repo, m)
+	return p.persistMessageWithRepo(ctx, p.repo, m, true)
 }
 
 // persistMessageWithRepo is persistMessage bound to an explicit repository so
-// history sync can run a whole conversation inside one transaction.
-func (p *Persister) persistMessageWithRepo(ctx context.Context, repo *database.Repo, m *events.Message) error {
+// history sync can run a whole conversation inside one transaction. When emit
+// is true, a newly inserted message publishes message.received (and, when the
+// chat bookkeeping changed, chat.updated) after the database commit.
+func (p *Persister) persistMessageWithRepo(ctx context.Context, repo *database.Repo, m *events.Message, emit bool) error {
 	if m == nil || m.Info.ID == "" || m.Info.Chat.IsEmpty() {
 		return nil
 	}
@@ -215,17 +250,41 @@ func (p *Persister) persistMessageWithRepo(ctx context.Context, repo *database.R
 	if pm := m.Message.GetProtocolMessage(); pm != nil {
 		switch pm.GetType() {
 		case waE2E.ProtocolMessage_REVOKE:
-			if id := pm.GetKey().GetID(); id != "" {
-				return repo.SetMessageDeleted(ctx, id)
+			id := pm.GetKey().GetID()
+			if id == "" {
+				return nil
+			}
+			if err := repo.SetMessageDeleted(ctx, id); err != nil {
+				return err
+			}
+			if emit {
+				p.emitDomain(EventMessageUpdated, map[string]any{
+					"chat":    m.Info.Chat.String(),
+					"id":      id,
+					"deleted": true,
+				})
 			}
 			return nil
 		case waE2E.ProtocolMessage_MESSAGE_EDIT:
-			if id := pm.GetKey().GetID(); id != "" {
-				text, _ := extractText(pm.GetEditedMessage())
-				return repo.SetMessageEdited(ctx, id, text)
+			id := pm.GetKey().GetID()
+			if id == "" {
+				return nil
+			}
+			text, _ := extractText(pm.GetEditedMessage())
+			if err := repo.SetMessageEdited(ctx, id, text); err != nil {
+				return err
+			}
+			if emit {
+				p.emitDomain(EventMessageUpdated, map[string]any{
+					"chat":   m.Info.Chat.String(),
+					"id":     id,
+					"edited": true,
+				})
 			}
 			return nil
 		default:
+			// Any other protocol message is ignored entirely: no DB row and no
+			// domain event.
 			return nil
 		}
 	}
@@ -301,7 +360,48 @@ func (p *Persister) persistMessageWithRepo(ctx context.Context, repo *database.R
 			return err
 		}
 	}
+
+	// Persist first, publish second: by this point the message row and the
+	// chat bookkeeping are committed, so a consumer reacting to the event sees
+	// the new state in the local database.
+	if emit {
+		p.emitDomain(EventMessageReceived, map[string]any{
+			"chat":      chatJID,
+			"sender":    senderJID,
+			"id":        msg.ID,
+			"text":      text,
+			"timestamp": ipc.StringTimestamp(msg.Timestamp),
+			"from_me":   msg.FromMe,
+			"type":      mtype,
+		})
+		// chat.updated is only meaningful when the last message or the unread
+		// counter changed: a new message became the chat's last (LastMessageID
+		// == its id) or it was an incoming one, which always bumps unread.
+		if c, cerr := repo.GetChat(ctx, chatJID); cerr == nil {
+			if c.LastMessageID == msg.ID || !m.Info.IsFromMe {
+				p.emitChatUpdated(c)
+			}
+		}
+	}
 	return nil
+}
+
+// emitChatUpdated publishes the current chat row. It is called only after the
+// change is committed.
+func (p *Persister) emitChatUpdated(c *database.Chat) {
+	if c == nil {
+		return
+	}
+	data := map[string]any{
+		"jid":          c.JID,
+		"unread":       c.UnreadCount,
+		"last_message": c.LastPreview,
+		"last_ts":      ipc.StringTimestamp(c.LastMessageTS),
+	}
+	if c.Name != "" {
+		data["name"] = c.Name
+	}
+	p.emitDomain(EventChatUpdated, data)
 }
 
 // persistReaction stores a reaction as metadata only, in cae_reactions. It
@@ -324,15 +424,17 @@ func (p *Persister) persistReaction(ctx context.Context, repo *database.Repo, m 
 
 // persistReceipt records per-user receipts and advances the message status.
 // A read receipt generated by one of our own devices clears the chat unread.
+// After the writes it publishes receipt.updated, plus chat.updated when the
+// unread counter was cleared.
 func (p *Persister) persistReceipt(ctx context.Context, r *events.Receipt) error {
 	if r == nil || len(r.MessageIDs) == 0 {
 		return nil
 	}
 	chat := r.Chat.String()
+	// ReceiptTypeDelivered is the empty string in whatsmeow; store a readable
+	// value instead.
 	rtype := string(r.Type)
 	if rtype == "" {
-		// ReceiptTypeDelivered is the empty string in whatsmeow; store a
-		// readable value instead.
 		rtype = "delivered"
 	}
 
@@ -349,16 +451,38 @@ func (p *Persister) persistReceipt(ctx context.Context, r *events.Receipt) error
 		}
 	}
 
+	status := rtype
+	clearUnread := false
 	switch r.Type {
 	case types.ReceiptTypeRead, types.ReceiptTypeReadSelf:
+		// Both advance the stored message status to "read"; report that
+		// stable value rather than whatsmeow's "read-self".
+		status = "read"
 		if err := p.repo.SetMessagesStatus(ctx, ids, "read"); err != nil {
 			return err
 		}
 		if r.IsFromMe || r.Type == types.ReceiptTypeReadSelf {
-			return p.repo.MarkChatRead(ctx, chat)
+			if err := p.repo.MarkChatRead(ctx, chat); err != nil {
+				return err
+			}
+			clearUnread = true
 		}
 	case types.ReceiptTypeDelivered:
-		return p.repo.SetMessagesStatus(ctx, ids, "delivered")
+		if err := p.repo.SetMessagesStatus(ctx, ids, "delivered"); err != nil {
+			return err
+		}
+	}
+
+	// Publish only after everything above was committed.
+	p.emitDomain(EventReceiptUpdated, map[string]any{
+		"chat":   chat,
+		"ids":    ids,
+		"status": status,
+	})
+	if clearUnread {
+		if c, err := p.repo.GetChat(ctx, chat); err == nil {
+			p.emitChatUpdated(c)
+		}
 	}
 	return nil
 }
@@ -528,7 +652,7 @@ func (p *Persister) persistConversation(
 				slog.String("error", perr.Error()))
 			continue
 		}
-		if err := p.persistMessageWithRepo(ctx, repo, ev); err != nil {
+		if err := p.persistMessageWithRepo(ctx, repo, ev, false); err != nil {
 			return err
 		}
 	}

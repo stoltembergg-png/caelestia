@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"log/slog"
 	"strings"
@@ -350,8 +351,26 @@ func TestStartLoginEmitsQRWithoutLoggingCode(t *testing.T) {
 		t.Fatalf("auth.qr timeout = %v, want 60", ev.Data["timeout"])
 	}
 
+	// A renderable PNG must be included, decodable from base64 and starting
+	// with the PNG magic bytes.
+	pngB64, ok := ev.Data["png_base64"].(string)
+	if !ok || pngB64 == "" {
+		t.Fatalf("auth.qr missing png_base64: %+v", ev.Data)
+	}
+	raw, err := base64.StdEncoding.DecodeString(pngB64)
+	if err != nil {
+		t.Fatalf("png_base64 is not valid base64: %v", err)
+	}
+	pngMagic := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}
+	if !bytes.HasPrefix(raw, pngMagic) {
+		t.Fatalf("decoded png_base64 is not a PNG (got % x)", raw[:min(len(raw), 8)])
+	}
+
 	if strings.Contains(logs.String(), code) {
 		t.Fatal("QR code leaked into the logs")
+	}
+	if strings.Contains(logs.String(), pngB64) {
+		t.Fatal("QR PNG leaked into the logs")
 	}
 	if !strings.Contains(logs.String(), "qr emitted") {
 		t.Fatal("expected a redacted 'qr emitted' log line")

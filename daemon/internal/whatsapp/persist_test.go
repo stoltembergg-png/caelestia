@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -576,5 +577,354 @@ func TestPersisterCloseDrainsInbox(t *testing.T) {
 	}
 	if len(msgs) != n {
 		t.Fatalf("after Close: %d messages, want %d (events were dropped)", len(msgs), n)
+	}
+}
+
+// domainEvent is one captured OnDomainEvent callback.
+type domainEvent struct {
+	name string
+	data map[string]any
+}
+
+// eventRecorder is a thread-safe OnDomainEvent sink for assertions.
+type eventRecorder struct {
+	mu     sync.Mutex
+	events []domainEvent
+}
+
+func (r *eventRecorder) hook(name string, data any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	m, _ := data.(map[string]any)
+	r.events = append(r.events, domainEvent{name: name, data: m})
+}
+
+func (r *eventRecorder) list() []domainEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]domainEvent(nil), r.events...)
+}
+
+func (r *eventRecorder) reset() {
+	r.mu.Lock()
+	r.events = nil
+	r.mu.Unlock()
+}
+
+func eventByName(events []domainEvent, name string) []domainEvent {
+	var out []domainEvent
+	for _, e := range events {
+		if e.name == name {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func TestPersisterEmitsMessageReceivedAndChatUpdated(t *testing.T) {
+	p, repo, ctx := newTestPersister(t)
+	rec := &eventRecorder{}
+
+	// The hook must run only after the message is committed: assert the row is
+	// already readable from the database while handling message.received.
+	persistedAtEmit := false
+	p.OnDomainEvent(func(name string, data any) {
+		if name == EventMessageReceived {
+			if _, err := repo.GetMessage(ctx, "m1"); err == nil {
+				persistedAtEmit = true
+			}
+		}
+		rec.hook(name, data)
+	})
+
+	msg := testMessage("m1", "alice@s.whatsapp.net", "alice@s.whatsapp.net", false, 1730000000000, "hi there")
+	msg.Info.PushName = "Alice"
+	if err := p.persistMessage(ctx, msg); err != nil {
+		t.Fatalf("persistMessage: %v", err)
+	}
+	if !persistedAtEmit {
+		t.Fatal("message.received was emitted before the message was persisted")
+	}
+
+	events := rec.list()
+	if len(events) != 2 {
+		t.Fatalf("events = %+v, want message.received then chat.updated", events)
+	}
+
+	got := events[0]
+	if got.name != EventMessageReceived {
+		t.Fatalf("first event = %q, want %q", got.name, EventMessageReceived)
+	}
+	want := map[string]any{
+		"chat":      "alice@s.whatsapp.net",
+		"sender":    "alice@s.whatsapp.net",
+		"id":        "m1",
+		"text":      "hi there",
+		"timestamp": "1730000000000",
+		"from_me":   false,
+		"type":      "text",
+	}
+	for k, v := range want {
+		if got.data[k] != v {
+			t.Errorf("message.received[%q] = %v (%T), want %v (%T)", k, got.data[k], got.data[k], v, v)
+		}
+	}
+
+	cu := events[1]
+	if cu.name != EventChatUpdated {
+		t.Fatalf("second event = %q, want %q", cu.name, EventChatUpdated)
+	}
+	wantCU := map[string]any{
+		"jid":          "alice@s.whatsapp.net",
+		"name":         "Alice",
+		"unread":       1,
+		"last_message": "hi there",
+		"last_ts":      "1730000000000",
+	}
+	for k, v := range wantCU {
+		if cu.data[k] != v {
+			t.Errorf("chat.updated[%q] = %v, want %v", k, cu.data[k], v)
+		}
+	}
+
+	// A duplicate insert is a no-op: it must not re-emit anything.
+	rec.reset()
+	if err := p.persistMessage(ctx, msg); err != nil {
+		t.Fatalf("persistMessage (duplicate): %v", err)
+	}
+	if evs := rec.list(); len(evs) != 0 {
+		t.Fatalf("duplicate message emitted events: %+v", evs)
+	}
+}
+
+func TestPersisterEmitsOwnEchoAsMessageReceived(t *testing.T) {
+	p, _, ctx := newTestPersister(t)
+	rec := &eventRecorder{}
+	p.OnDomainEvent(rec.hook)
+
+	if err := p.persistMessage(ctx, testMessage("me1", "bob@s.whatsapp.net", "me@s.whatsapp.net", true, 1000, "sent")); err != nil {
+		t.Fatalf("persistMessage: %v", err)
+	}
+
+	rx := eventByName(rec.list(), EventMessageReceived)
+	if len(rx) != 1 {
+		t.Fatalf("message.received count = %d, want 1 (own echo)", len(rx))
+	}
+	if rx[0].data["from_me"] != true {
+		t.Fatalf("from_me = %v, want true", rx[0].data["from_me"])
+	}
+	if rx[0].data["sender"] != "me@s.whatsapp.net" {
+		t.Fatalf("sender = %v, want me@s.whatsapp.net", rx[0].data["sender"])
+	}
+	if rx[0].data["text"] != "sent" {
+		t.Fatalf("text = %v, want sent", rx[0].data["text"])
+	}
+}
+
+func TestPersisterEmitsReceiptUpdated(t *testing.T) {
+	t.Run("delivered keeps unread and emits only receipt.updated", func(t *testing.T) {
+		p, _, ctx := newTestPersister(t)
+		rec := &eventRecorder{}
+		p.OnDomainEvent(rec.hook)
+
+		if err := p.persistMessage(ctx, testMessage("out1", "bob@s.whatsapp.net", "me@s.whatsapp.net", true, 1000, "sent")); err != nil {
+			t.Fatalf("persistMessage: %v", err)
+		}
+		rec.reset()
+
+		if err := p.persistReceipt(ctx, &events.Receipt{
+			MessageSource: types.MessageSource{Chat: mustJID("bob@s.whatsapp.net"), Sender: mustJID("bob@s.whatsapp.net")},
+			MessageIDs:    []types.MessageID{"out1"},
+			Timestamp:     time.UnixMilli(2000),
+			Type:          types.ReceiptTypeDelivered,
+		}); err != nil {
+			t.Fatalf("persistReceipt: %v", err)
+		}
+
+		events := rec.list()
+		if len(events) != 1 || events[0].name != EventReceiptUpdated {
+			t.Fatalf("events = %+v, want a single receipt.updated", events)
+		}
+		if events[0].data["chat"] != "bob@s.whatsapp.net" || events[0].data["status"] != "delivered" {
+			t.Fatalf("receipt.updated = %+v", events[0].data)
+		}
+		ids, ok := events[0].data["ids"].([]string)
+		if !ok || len(ids) != 1 || ids[0] != "out1" {
+			t.Fatalf("receipt.updated ids = %#v, want [out1]", events[0].data["ids"])
+		}
+	})
+
+	t.Run("read clears unread and emits chat.updated", func(t *testing.T) {
+		p, _, ctx := newTestPersister(t)
+		rec := &eventRecorder{}
+		p.OnDomainEvent(rec.hook)
+
+		if err := p.persistMessage(ctx, testMessage("in1", "bob@s.whatsapp.net", "bob@s.whatsapp.net", false, 3000, "reply")); err != nil {
+			t.Fatalf("persistMessage: %v", err)
+		}
+		rec.reset()
+
+		if err := p.persistReceipt(ctx, &events.Receipt{
+			MessageSource: types.MessageSource{
+				Chat:     mustJID("bob@s.whatsapp.net"),
+				Sender:   mustJID("me@s.whatsapp.net"),
+				IsFromMe: true,
+			},
+			MessageIDs: []types.MessageID{"in1"},
+			Timestamp:  time.UnixMilli(4000),
+			Type:       types.ReceiptTypeReadSelf,
+		}); err != nil {
+			t.Fatalf("persistReceipt: %v", err)
+		}
+
+		events := rec.list()
+		if len(events) != 2 {
+			t.Fatalf("events = %+v, want receipt.updated then chat.updated", events)
+		}
+		if events[0].name != EventReceiptUpdated || events[0].data["status"] != "read" {
+			t.Fatalf("first event = %+v, want receipt.updated/read", events[0])
+		}
+		if events[1].name != EventChatUpdated {
+			t.Fatalf("second event = %+v, want chat.updated", events[1])
+		}
+		if events[1].data["unread"] != 0 {
+			t.Fatalf("chat.updated unread = %v, want 0", events[1].data["unread"])
+		}
+	})
+}
+
+func TestPersisterEmitsMessageUpdatedForEditAndRevoke(t *testing.T) {
+	p, _, ctx := newTestPersister(t)
+	rec := &eventRecorder{}
+	p.OnDomainEvent(rec.hook)
+
+	// Seed two messages so the protocol mutations have a target.
+	for _, id := range []string{"m1", "m2"} {
+		if err := p.persistMessage(ctx, testMessage(id, "bob@s.whatsapp.net", "bob@s.whatsapp.net", false, 1000, "original "+id)); err != nil {
+			t.Fatalf("persistMessage(%s): %v", id, err)
+		}
+	}
+	rec.reset()
+
+	revoke := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: mustJID("bob@s.whatsapp.net"), Sender: mustJID("bob@s.whatsapp.net")},
+			ID:            "m1",
+			Timestamp:     time.UnixMilli(2000),
+		},
+		Message: &waE2E.Message{ProtocolMessage: &waE2E.ProtocolMessage{
+			Type: waE2E.ProtocolMessage_REVOKE.Enum(),
+			Key:  &waCommon.MessageKey{ID: proto.String("m1")},
+		}},
+	}
+	if err := p.persistMessage(ctx, revoke); err != nil {
+		t.Fatalf("persistMessage(revoke): %v", err)
+	}
+	evs := rec.list()
+	if len(evs) != 1 || evs[0].name != EventMessageUpdated {
+		t.Fatalf("revoke events = %+v, want one message.updated", evs)
+	}
+	if evs[0].data["id"] != "m1" || evs[0].data["chat"] != "bob@s.whatsapp.net" || evs[0].data["deleted"] != true {
+		t.Fatalf("revoke payload = %+v", evs[0].data)
+	}
+	if _, has := evs[0].data["edited"]; has {
+		t.Fatalf("revoke payload must not carry edited: %+v", evs[0].data)
+	}
+	rec.reset()
+
+	edit := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: mustJID("bob@s.whatsapp.net"), Sender: mustJID("bob@s.whatsapp.net")},
+			ID:            "m2",
+			Timestamp:     time.UnixMilli(4000),
+		},
+		Message: &waE2E.Message{ProtocolMessage: &waE2E.ProtocolMessage{
+			Type:          waE2E.ProtocolMessage_MESSAGE_EDIT.Enum(),
+			Key:           &waCommon.MessageKey{ID: proto.String("m2")},
+			EditedMessage: &waE2E.Message{Conversation: proto.String("after")},
+		}},
+	}
+	if err := p.persistMessage(ctx, edit); err != nil {
+		t.Fatalf("persistMessage(edit): %v", err)
+	}
+	evs = rec.list()
+	if len(evs) != 1 || evs[0].name != EventMessageUpdated {
+		t.Fatalf("edit events = %+v, want one message.updated", evs)
+	}
+	if evs[0].data["id"] != "m2" || evs[0].data["edited"] != true {
+		t.Fatalf("edit payload = %+v", evs[0].data)
+	}
+	if _, has := evs[0].data["deleted"]; has {
+		t.Fatalf("edit payload must not carry deleted: %+v", evs[0].data)
+	}
+}
+
+func TestPersisterEmitsNothingForIgnoredEvents(t *testing.T) {
+	p, _, ctx := newTestPersister(t)
+	rec := &eventRecorder{}
+	p.OnDomainEvent(rec.hook)
+
+	// Seed a message the reaction targets, then clear the seed events.
+	if err := p.persistMessage(ctx, testMessage("m1", "bob@s.whatsapp.net", "bob@s.whatsapp.net", false, 1000, "hello")); err != nil {
+		t.Fatalf("persistMessage(seed): %v", err)
+	}
+	rec.reset()
+
+	if err := p.persistMessage(ctx, reactionMessage("react1", "bob@s.whatsapp.net", "bob@s.whatsapp.net", "m1", "👍", 2000)); err != nil {
+		t.Fatalf("persistMessage(reaction): %v", err)
+	}
+	// A protocol message that is neither REVOKE nor MESSAGE_EDIT.
+	ignored := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: mustJID("bob@s.whatsapp.net"), Sender: mustJID("bob@s.whatsapp.net")},
+			ID:            "proto1",
+			Timestamp:     time.UnixMilli(3000),
+		},
+		Message: &waE2E.Message{ProtocolMessage: &waE2E.ProtocolMessage{
+			Type: waE2E.ProtocolMessage_EPHEMERAL_SETTING.Enum(),
+		}},
+	}
+	if err := p.persistMessage(ctx, ignored); err != nil {
+		t.Fatalf("persistMessage(protocol): %v", err)
+	}
+
+	if evs := rec.list(); len(evs) != 0 {
+		t.Fatalf("ignored events emitted domain events: %+v", evs)
+	}
+}
+
+func TestPersisterHistoryDoesNotEmitDomainEvents(t *testing.T) {
+	p, _, ctx := newTestPersister(t)
+	p.parseWebMessage = func(chatJID types.JID, wm *waWeb.WebMessageInfo) (*events.Message, error) {
+		return &events.Message{
+			Info: types.MessageInfo{
+				MessageSource: types.MessageSource{
+					Chat:     chatJID,
+					Sender:   chatJID,
+					IsFromMe: wm.GetKey().GetFromMe(),
+				},
+				ID:        wm.GetKey().GetID(),
+				Timestamp: time.Unix(int64(wm.GetMessageTimestamp()), 0),
+			},
+			Message: wm.GetMessage(),
+		}, nil
+	}
+	rec := &eventRecorder{}
+	p.OnDomainEvent(rec.hook)
+
+	data := &waHistorySync.HistorySync{
+		Progress: proto.Uint32(100),
+		Conversations: []*waHistorySync.Conversation{{
+			ID: proto.String("bob@s.whatsapp.net"),
+			Messages: []*waHistorySync.HistorySyncMsg{
+				{Message: historyWebMessage("h1", "bob@s.whatsapp.net", false, 1000)},
+			},
+		}},
+	}
+	if err := p.persistHistory(ctx, &events.HistorySync{Data: data}); err != nil {
+		t.Fatalf("persistHistory: %v", err)
+	}
+	if evs := rec.list(); len(evs) != 0 {
+		t.Fatalf("history sync emitted domain events: %+v", evs)
 	}
 }

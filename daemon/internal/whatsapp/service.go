@@ -56,6 +56,16 @@ const (
 	EventConnectionUpdated = "connection.updated"
 )
 
+// Domain event names published by the Persister after a successful DB write.
+// They reach the IPC server through Persister.OnDomainEvent. 64-bit identifiers
+// and timestamps are encoded as strings (see docs/IPC.md §2.4).
+const (
+	EventMessageReceived = "message.received"
+	EventMessageUpdated  = "message.updated"
+	EventReceiptUpdated  = "receipt.updated"
+	EventChatUpdated     = "chat.updated"
+)
+
 // Event is an internal, already-redacted event ready to be broadcast over IPC.
 type Event struct {
 	Name string

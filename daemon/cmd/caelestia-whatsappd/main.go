@@ -107,6 +107,15 @@ func run(args []string) error {
 	ipcServer := ipc.NewServer(cfg.Socket, logger)
 	registerHandlers(ipcServer, svc, repo, cfg, logger, startedAt)
 
+	// Domain events (message.received, message.updated, receipt.updated,
+	// chat.updated) are produced by the persistence worker only after the row
+	// is committed to SQLite (persist-before-publish). Binding the hook
+	// directly to Broadcast keeps a single publisher path: the pump below
+	// forwards the auth/connection events from the service. On shutdown the
+	// persister is closed and drained *before* the IPC server, so events
+	// accepted by the worker are still broadcast while clients are connected.
+	persister.OnDomainEvent(ipcServer.Broadcast)
+
 	if err := ipcServer.Start(); err != nil {
 		_ = svc.Close()
 		_ = db.Close()

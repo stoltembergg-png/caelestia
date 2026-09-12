@@ -65,7 +65,7 @@ resultado nulo, `"result":null` é enviado de forma explícita.
 ### 2.3 Event
 
 ```json
-{"event":"auth.qr","data":{"code":"2@abc...","timeout":60}}
+{"event":"auth.qr","data":{"code":"2@abc...","timeout":60,"png_base64":"iVBORw0KGgo..."}}
 ```
 
 | Campo   | Tipo   | Descrição |
@@ -75,6 +75,11 @@ resultado nulo, `"result":null` é enviado de forma explícita.
 
 Eventos são enviados a **todos** os clientes conectados (`Server.Broadcast`) e
 não geram resposta.
+
+No evento `auth.qr`, `png_base64` é uma imagem PNG 256×256 do `code` codificada
+em base64 **padrão**, pronta para o frontend QML renderizar sem precisar de uma
+biblioteca de QR no lado do shell. Tanto `code` quanto `png_base64` são
+segredos: circulam apenas no IPC e **nunca** aparecem no log.
 
 ### 2.4 Inteiros de 64 bits: use string
 
@@ -221,8 +226,9 @@ Response:
 ### `auth.start` (fase 2.3)
 
 Inicia o fluxo de pareamento por QR code. O daemon chama `GetQRChannel` **antes**
-do `Connect` e passa a emitir eventos `auth.qr`. O código do QR **nunca** é
-registrado em log (apenas `"qr emitted"`).
+do `Connect` e passa a emitir eventos `auth.qr` (com `code`, `timeout` e o
+`png_base64` do QR). Nem o código nem o PNG **nunca** são registrados em log
+(apenas `"qr emitted"`).
 
 Request:
 
@@ -421,8 +427,10 @@ Response:
 >   recebidas; mensagens próprias (`fromMe`) não gravam o nosso push name no
 >   JID do par.
 > - **History sync** aplica cada conversa em uma transação (`Repo.WithTx`)
->   mantendo a idempotência dos inserts. Priorização/paralelismo do history
->   sync em relação aos eventos ao vivo fica para antes da F4.
+>   mantendo a idempotência dos inserts. O history sync **não** publica eventos
+>   de domínio (é backfill, não mensagem em tempo real): os eventos ao vivo
+>   saem apenas do dispatcher de `Message`/`Receipt`. Priorização/paralelismo do
+>   history sync em uma lane separada fica para antes da F4.
 
 ### `message.send` (fase 2.4)
 
@@ -497,7 +505,7 @@ Response:
 
 ---
 
-## 7. Métodos e eventos planejados (fase 2.5+)
+## 7. Métodos e eventos — status
 
 Ainda **não** implementados; um request a eles responde `method_not_found`. A
 tabela congela os nomes para o contrato não mudar quando forem implementados.
@@ -518,29 +526,54 @@ Métodos restantes (de `ARQUITETURA.md` §3.3):
 
 Eventos (push, sem `id`):
 
-Implementados na fase 2.3:
+### 7.1 Autenticação e conexão (fase 2.3)
 
 | Evento | Descrição |
 |---|---|
-| `auth.qr` | novo código QR (`{code, timeout}`); o `code` vai só no IPC, nunca no log |
+| `auth.qr` | novo código QR (`{code, png_base64, timeout}`); `code` e `png_base64` vão só no IPC, nunca no log |
 | `auth.connected` | pareamento/autenticação concluídos (`{jid?, push_name?}`) |
 | `auth.disconnected` | sessão desconectada/logout (`{reason}`) |
 | `auth.error` | erro de pareamento (`{message}`): timeout, QR inválido, client outdated… |
 | `connection.updated` | estado da conexão (`{state, since}`), emitido a cada transição |
 
-> A fase 2.4 persiste `Message`/`Receipt`/`HistorySync`/`Contact`/`GroupInfo`
-> nas tabelas `cae_*`, mas **ainda não** publica os eventos de domínio abaixo;
-> eles serão emitidos quando o frontend em tempo real for implementado.
+### 7.2 Domínio (fase 3) — **implementados**
 
-Planejados (fase 2.5+):
+Emitidos pelo `Persister` **depois** de a alteração ser gravada no SQLite
+(persistir-antes-de-publicar) e sem bloquear o handler do whatsmeow: o handler
+apenas classifica e enfileira, e um único worker persiste e publica. O hook é
+ligado em `main.go` a `ipcServer.Broadcast`; no shutdown o `Persister` é
+fechado e drenado **antes** do servidor IPC, então os eventos que já estavam na
+fila ainda são emitidos para os clientes conectados.
+
+| Evento | `data` | Quando |
+|---|---|---|
+| `message.received` | `{chat, sender, id, text, timestamp, from_me, type}` | mensagem **nova** inserida (entrada ou eco próprio de outro dispositivo) |
+| `message.updated` | `{chat, id, edited?, deleted?}` | `REVOKE` (`deleted:true`) ou `MESSAGE_EDIT` (`edited:true`); o campo que não se aplica é omitido |
+| `receipt.updated` | `{chat, ids, status}` | recibo (`delivered` ou `read`); `ids` é uma lista de strings |
+| `chat.updated` | `{jid, name?, unread, last_message, last_ts}` | `unread` ou a última mensagem mudou (mensagem nova ou leitura que zera o contador); `name` só quando conhecido |
+
+Exemplos:
+
+```json
+{"event":"message.received","data":{"chat":"5511999999999@s.whatsapp.net","sender":"5511999999999@s.whatsapp.net","id":"3EB0...","text":"oi","timestamp":"1730000001000","from_me":false,"type":"text"}}
+{"event":"message.updated","data":{"chat":"5511999999999@s.whatsapp.net","id":"3EB0...","deleted":true}}
+{"event":"message.updated","data":{"chat":"5511999999999@s.whatsapp.net","id":"3EB0...","edited":true}}
+{"event":"receipt.updated","data":{"chat":"5511999999999@s.whatsapp.net","ids":["3EB0..."],"status":"read"}}
+{"event":"chat.updated","data":{"jid":"5511999999999@s.whatsapp.net","name":"Fulano","unread":2,"last_message":"oi","last_ts":"1730000001000"}}
+```
+
+`last_message` é o preview exibido na lista de conversas (não o `id`);
+`timestamp` e `last_ts` são strings de milissegundos. Reações e mensagens de
+protocolo que não sejam `REVOKE`/`MESSAGE_EDIT` **não** geram nenhum evento. O
+**history sync** também não emite: é backfill e não mensagem em tempo real.
+
+> Apagar uma mensagem é sinalizado por `message.updated {deleted:true}`; não há
+> um evento `message.deleted` separado (nome unificado no contrato).
+
+### 7.3 Planejados (fase 2.5+)
 
 | Evento | Descrição |
 |---|---|
-| `message.received` | nova mensagem |
-| `message.updated` | mensagem editada/atualizada |
-| `message.deleted` | mensagem apagada |
-| `receipt.updated` | recibo (entregue/lido) |
-| `chat.updated` | metadados da conversa mudaram |
 | `typing.updated` | presença de digitação |
 
 > Lembrete: IDs e timestamps de 64 bits nesses eventos vão como **string**
@@ -566,7 +599,7 @@ Fluxo de login por QR:
 → {"id":3,"method":"auth.start"}
 ← {"id":3,"result":{"started":true}}
 
-← {"event":"auth.qr","data":{"code":"2@abcd...","timeout":60}}
+← {"event":"auth.qr","data":{"code":"2@abcd...","timeout":60,"png_base64":"iVBORw0KGgo..."}}
 
 ← {"event":"auth.connected","data":{"jid":"5511999999999@s.whatsapp.net","push_name":"Fulano"}}
 ← {"event":"connection.updated","data":{"state":"connected","since":"1730000000000"}}

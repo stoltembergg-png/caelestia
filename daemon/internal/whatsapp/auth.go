@@ -2,11 +2,13 @@ package whatsapp
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
 )
 
@@ -120,12 +122,22 @@ func (s *Service) handleQRItem(item whatsmeow.QRChannelItem) {
 	switch item.Event {
 	case whatsmeow.QRChannelEventCode:
 		timeout := int(item.Timeout / time.Second)
-		// Never log item.Code.
-		s.logger.Info("whatsapp: qr emitted", slog.Int("timeout_seconds", timeout))
-		s.emit(EventAuthQR, map[string]any{
+		data := map[string]any{
 			"code":    item.Code,
 			"timeout": timeout,
-		})
+		}
+		// The frontend renders the QR from a PNG so it does not have to depend
+		// on a QR library in QML. Both the raw code and its PNG are secrets and
+		// must never reach the logs: on failure only a generic warning is
+		// written (without the error, which could echo the content).
+		if png, err := qrcode.Encode(item.Code, qrcode.Medium, 256); err != nil {
+			s.logger.Warn("whatsapp: qr png generation failed")
+		} else {
+			data["png_base64"] = base64.StdEncoding.EncodeToString(png)
+		}
+		// Never log item.Code.
+		s.logger.Info("whatsapp: qr emitted", slog.Int("timeout_seconds", timeout))
+		s.emit(EventAuthQR, data)
 	case "success":
 		s.logger.Info("whatsapp: qr pairing succeeded")
 		if s.setState(StateConnected, "pairing success") {
