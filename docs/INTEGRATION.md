@@ -68,7 +68,7 @@ Todos os blocos são envolvidos por marcadores e aplicados de forma idempotente
 |---|---|---|
 | `modules/drawers/Panels.qml` | `patch-caelestia-whatsapp.py` | `import qs.extras.whatsapp as ExtrasWhatsApp` (marcador); `readonly property alias whatsapp: whatsapp`; instância `ExtrasWhatsApp.Drawer { id: whatsapp; screen: root.screen; screenState: root.screenState; anchors.top/bottom/left: parent.* }` antes do `Sidebar.Wrapper`. |
 | `modules/drawers/ContentWindow.qml` | `patch-caelestia-whatsapp.py` | `PanelBg { id: whatsappBg; panel: panels.whatsapp; deformAmount: 0.03; implicitHeight: panel.height * (1 / rawDeformMatrix.m22) + 2 }` junto aos demais; `whatsapp.transform: Matrix4x4 { matrix: whatsappBg.deformMatrix }` **dentro** do bloco `Panels`; `\|\| panels.whatsapp.visible` no binding de `WlrLayershell.keyboardFocus`. |
-| `modules/drawers/Regions.qml` | `patch-caelestia-whatsapp.py` | `R { panel: root.panels.whatsapp; y: 0; height: panel.height * (1 - panel.offsetScale) + root.borderThickness }` (região de input full-height). |
+| `modules/drawers/Regions.qml` | `patch-caelestia-whatsapp.py` | `R { panel: root.panels.whatsapp; y: 0; height: panel.height * (1 - panel.offsetScale) + root.borderThickness }` (região de input do painel) **e** uma região **modal** (`Region { x: 0; y: 0; width/height: root.win.* quando `panels.whatsapp.opened`; intersection: Intersection.Subtract }`) que faz o mask cobrir a janela inteira enquanto o drawer está aberto. |
 | `modules/drawers/Interactions.qml` | `patch-caelestia-whatsapp.py` | **Sem** abertura/fecho por hover (o antigo sensor de borda + timers `waDwell`/`waHide` + close em `onContainsMouseChanged` são removidos). O `onPressed` mantém o `dragStart` e fecha o painel ao clicar **fora** quando `panels.whatsapp.opened`; `onFullscreenChanged` fecha em fullscreen. |
 | `modules/bar/Bar.qml` | `patch-caelestia-whatsapp-bar.py` | `import qs.extras.whatsapp` + `import qs.extras.whatsapp as ExtrasWhatsApp`; `DelegateChoice { roleValue: "whatsapp"; delegate: EntryWrapper { WhatsAppBarItem { bar: root; objectName: "taskbarWhatsApp" } } }` no fim do `DelegateChooser`. |
 | `~/.config/caelestia/shell.json` | `patch-caelestia-whatsapp-bar.py` | entrada `{"id": "whatsapp", "enabled": true}` em `bar.entries` (dict ou list), se o ficheiro existir. |
@@ -155,6 +155,32 @@ Não há sensor de borda nem timers de dwell/hide. Em árvores já instaladas, o
 patch **remove** automaticamente o bloco antigo (sensor `waEdgeW` +
 `waDwell`/`waHide` + close em `onContainsMouseChanged`) e o substitui pelo novo,
 de forma idempotente.
+
+### Região de input (modal de verdade)
+
+Para o clique-fora funcionar, o clique tem de **chegar ao shell**. Sem isso, a
+região de input do `Regions.qml` só cobre o painel e o clique vai para a janela
+de baixo. A semântica do `Region` do Quickshell (ver `src/core/region.cpp`) é:
+
+- o `mask` da janela é `rootRegion.applyTo(QRect(0, 0, w, h))`;
+- o `Region` raiz do `Regions.qml` usa `intersection: Intersection.Xor`, logo
+  `mask = window XOR root.build()`;
+- `root.build()` = rect do `root` menos cada painel (filhos com
+  `Intersection.Subtract`). Normalmente:
+  `mask = (window \ root) ∪ painéis` (moldura + coluna da barra + painéis).
+
+Com o drawer aberto, adiciona-se um filho
+`Region { x: 0; y: 0; width/height: root.win.*; intersection: Intersection.Subtract }`.
+Como ele subtrai a janela inteira, `root.build()` fica **vazio** e
+`mask = window XOR ∅ = window`: todos os cliques passam a chegar ao shell e o
+`onPressed` de `Interactions.qml` fecha o drawer se o clique estiver fora do
+painel. Com o drawer fechado a região é `0x0` (vazia) e o mask volta ao normal
+(os cliques atravessam de novo). A barra continua clicável — a coluna da barra
+já fazia parte do mask normal (fica em `window \ root`).
+
+> Nota: um `Combine` de um rect da janela **não** serve aqui — com o `Xor` do
+> raiz daria `window XOR window = ∅` (janela transparente a input). O
+> `Subtract` é o que zera o `build()` e faz o `Xor` devolver o window completo.
 
 O singleton `WhatsAppState` permite desacoplar o pedido de abrir/fechar de
 outros pontos da UI (barra, atalhos, IPC):

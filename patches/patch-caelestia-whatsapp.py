@@ -28,7 +28,12 @@ Pontos do patch (contrato congelado em
 3. modules/drawers/Regions.qml
      * `R { panel: root.panels.whatsapp; y: 0;
        height: panel.height * (1 - panel.offsetScale) + root.borderThickness }`
-       (marcador).
+       (região de input do painel);
+     * região MODAL (`Region { x: 0; y: 0; width/height: root.win.* }` com
+       `intersection: Intersection.Subtract`, ativa quando
+       `panels.whatsapp.opened`): com o drawer aberto subtrai a janela inteira e
+       o XOR do Region raiz devolve o window completo, capturando todos os
+       cliques; fechada é 0x0 e não afeta o mask.
 4. modules/drawers/Interactions.qml
      * ABERTURA só por ação explícita (item da barra, atalho
        `caelestia:whatsapp` ou IPC `whatsapp toggle|show`) — sem sensor de
@@ -66,6 +71,15 @@ MARK_BEGIN = "// >>> caelestia-extras whatsapp"
 MARK_END = "// <<< caelestia-extras whatsapp"
 
 IMPORT_WHATSAPP = "import qs.extras.whatsapp as ExtrasWhatsApp"
+
+# Bloco marcado do WhatsApp (usado em Regions.qml e Interactions.qml). Partilhado
+# para permitir substituição upgrade-safe do conteúdo antigo.
+WA_MARK_BLOCK_RE = re.compile(
+    r"^[ \t]*// >>> caelestia-extras whatsapp[ \t]*\n"
+    r".*?"
+    r"^[ \t]*// <<< caelestia-extras whatsapp[ \t]*\n?",
+    re.M | re.S,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -325,6 +339,13 @@ def patch_content_window(path: str, dry: bool) -> bool:
 
 # --------------------------------------------------------------------------- #
 # 3. Regions.qml
+#
+# A região do WhatsApp cobre o painel (input normal) e acrescenta uma região
+# MODAL: com o drawer aberto, subtrai a JANELA INTEIRA de `root`, o que zera
+# `root.build()`. Como o Region raiz usa `Intersection.Xor` contra o rect da
+# janela em `mask.applyTo(QRect(0, 0, w, h))`, `window XOR ∅ = window`: todos os
+# cliques chegam ao shell e o `onPressed` de Interactions consegue fechar o
+# drawer. Com o drawer fechado a região modal é 0x0 (vazia) e não altera o mask.
 # --------------------------------------------------------------------------- #
 WHATSAPP_REGION = wrap(
     """\
@@ -332,22 +353,42 @@ WHATSAPP_REGION = wrap(
         panel: root.panels.whatsapp
         y: 0
         height: panel.height * (1 - panel.offsetScale) + root.borderThickness
+    }
+
+    Region {
+        x: 0
+        y: 0
+        width: root.panels.whatsapp.opened ? root.win.width : 0
+        height: root.panels.whatsapp.opened ? root.win.height : 0
+        intersection: Intersection.Subtract
     }""",
     indent="    ",
 )
+
+WA_REGION_SENTINEL = "root.panels.whatsapp.opened ? root.win.width"
 
 
 def patch_regions(path: str, dry: bool) -> bool:
     original = read(path)
     text = original
 
-    if "panel: root.panels.whatsapp" in text:
+    if WA_REGION_SENTINEL in text:
         print("Regions.qml: já patchado, nada a fazer")
         return False
 
-    text, ok = insert_after_enclosing_block(text, r"panel\s*:\s*root\.panels\.dashboard", WHATSAPP_REGION)
-    if not ok:
-        print("AVISO: região do dashboard não encontrada em Regions.qml; região do WhatsApp ignorada")
+    # Upgrade-safe: se já existe o bloco marcado antigo (só o R), substitui-o
+    # inteiro pelo novo (R + região modal). Caso contrário, insere após o
+    # dashboard numa instalação limpa.
+    if WA_MARK_BLOCK_RE.search(text):
+        text = WA_MARK_BLOCK_RE.sub(lambda _: WHATSAPP_REGION, text, count=1)
+    else:
+        text, ok = insert_after_enclosing_block(text, r"panel\s*:\s*root\.panels\.dashboard", WHATSAPP_REGION)
+        if not ok:
+            print("AVISO: região do dashboard não encontrada em Regions.qml; região/modal do WhatsApp ignorada")
+            return False
+
+    if text == original:
+        print("Regions.qml: já patchado, nada a fazer")
         return False
     if dry:
         print(f"Regions.qml: seria atualizado ({len(text) - len(original)} bytes) — dry-run")
@@ -367,13 +408,7 @@ def patch_regions(path: str, dry: bool) -> bool:
 # presente, e os marcadores são reaproveitados pelo novo `onFullscreenChanged`.
 # --------------------------------------------------------------------------- #
 # Bloco marcado do WhatsApp (qualquer um dos antigos ou o novo).
-MARK_BLOCK_RE = re.compile(
-    r"^[ \t]*// >>> caelestia-extras whatsapp[ \t]*\n"
-    r".*?"
-    r"^[ \t]*// <<< caelestia-extras whatsapp[ \t]*\n?",
-    re.M | re.S,
-)
-
+# (regex partilhada `WA_MARK_BLOCK_RE`, definida no topo do módulo)
 WA_FULLSCREEN_NEW = wrap(
     """\
     onFullscreenChanged: {
@@ -417,7 +452,7 @@ def patch_interactions(path: str, dry: bool) -> bool:
     #     referenciava `waDwell`/`waHide`).
     pieces: list[str] = []
     last = 0
-    for m in MARK_BLOCK_RE.finditer(text):
+    for m in WA_MARK_BLOCK_RE.finditer(text):
         pieces.append(text[last:m.start()])
         kind = _classify_wa_block(m.group(0))
         if kind == "keep":
