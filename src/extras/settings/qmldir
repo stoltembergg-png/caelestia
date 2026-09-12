@@ -1,5 +1,3 @@
 module qs.extras.settings
 DockPage 1.0 DockPage.qml
 DockSettingsWindow 1.0 DockSettingsWindow.qml
-WhatsAppPage 1.0 WhatsAppPage.qml
-WhatsAppSettingsWindow 1.0 WhatsAppSettingsWindow.qml

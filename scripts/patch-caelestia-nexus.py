@@ -36,8 +36,6 @@ IMPORT_LINE = "import qs.extras.settings as ExtrasSettings"
 # Marcadores por bloco (a importação é compartilhada e fica sob o marcador da Dock).
 DOCK_MARK_BEGIN = "// >>> caelestia-extras dock-settings"
 DOCK_MARK_END = "// <<< caelestia-extras dock-settings"
-WA_MARK_BEGIN = "// >>> caelestia-extras whatsapp-settings"
-WA_MARK_END = "// <<< caelestia-extras whatsapp-settings"
 
 # Entradas da PageRegistry (indentação RELATIVA; insert_entry prefixa o recuo da lista).
 PAGE_ENTRY_DOCK = (
@@ -88,11 +86,9 @@ COMP_SENTINEL_WA = "ExtrasSettings.WhatsAppPage"
 # (entrada, sentinela, marcador-início, marcador-fim).
 PAGE_BLOCKS = [
     (PAGE_ENTRY_DOCK, PAGE_SENTINEL_DOCK, DOCK_MARK_BEGIN, DOCK_MARK_END),
-    (PAGE_ENTRY_WA, PAGE_SENTINEL_WA, WA_MARK_BEGIN, WA_MARK_END),
 ]
 COMP_BLOCKS = [
     (COMP_ENTRY_DOCK, COMP_SENTINEL_DOCK, DOCK_MARK_BEGIN, DOCK_MARK_END),
-    (COMP_ENTRY_WA, COMP_SENTINEL_WA, WA_MARK_BEGIN, WA_MARK_END),
 ]
 
 PAGES_RE = r"readonly\s+property\s+list<[^>]+>\s+pages\s*:\s*\["

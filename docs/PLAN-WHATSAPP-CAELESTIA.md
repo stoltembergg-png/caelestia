@@ -56,3 +56,6 @@ docs/PORT-SPEC-WHATSAPP.md             # atualizar com o novo contrato
 2. **Profundidade do minimalismo**: moderado (esconde abas/banners, header enxuto, blur — recomendado) × completo (+ sidebar oculta por padrão, modo “só conversa”) × só tema de cores.
 3. **Hover**: faixa logo à direita da barra (recomendado, zero conflito) × borda absoluta x<3 (gesto literal, exige supressão da barra).
 4. **Ajustes**: página no Nexus (padrão da Dock) × só `extras.json`.
+
+> **Atualização:** o módulo WebView foi **removido**; a integração do WhatsApp passou a ser
+> nativa (daemon Go + whatsmeow + UDS), no repo `caelestia-whatsapp` (`docs/ARQUITETURA.md`).

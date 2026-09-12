@@ -1,13 +1,9 @@
 // Portado de Serpantinum: src/quickshell/Shell.qml / Main.qml (AGPL-3.0)
-// Entry do módulo extras: instancia os hosts QuickActions e NoLimits, os fallbacks
-// standalone dos Ajustes da Dock e do WhatsApp e expõe o IPC target "extras" e os
-// atalhos globais correspondentes.
-// Estado: FloatingController (quick actions) / shim Config (dock) / singleton NoLimits /
-// WhatsAppState (drawer nativo, via singleton) / DockSettingsWindow (dock) /
-// WhatsAppSettingsWindow (whatsapp).
-// Nota: a Dock e o WhatsApp deixaram de ser instanciados aqui — viraram painéis
-// nativos do core (ver docs/PORT-SPEC-DOCK.md e docs/PORT-SPEC-WHATSAPP-V2.md);
-// este entry só expõe os toggles de configuração.
+// Entry do módulo extras: instancia o host QuickActions e o singleton NoLimits,
+// o fallback dos Ajustes da Dock e expõe o IPC target "extras" e os atalhos globais.
+// Estado: FloatingController (quick actions) / shim Config (dock) / singleton NoLimits.
+// Nota: a Dock é painel nativo do core (ver docs/PORT-SPEC-DOCK.md); o WhatsApp WebView
+// foi REMOVIDO (a integração nativa vive no repo caelestia-whatsapp).
 
 import QtQuick
 import Quickshell.Io
@@ -24,12 +20,6 @@ Item {
 
     DockSettingsWindow {
         id: dockSettings
-
-        visible: false
-    }
-
-    WhatsAppSettingsWindow {
-        id: whatsappSettings
 
         visible: false
     }
@@ -60,28 +50,12 @@ Item {
         NoLimits.show(view);
     }
 
-    function toggleWhatsApp() {
-        // O drawer nativo (L1) escuta os sinais do singleton WhatsAppState.
-        if (WhatsAppState.visible)
-            WhatsAppState.hideRequested();
-        else
-            WhatsAppState.showRequested();
-    }
-
     function openDockSettings() {
         dockSettings.open();
     }
 
     function toggleDockSettings() {
         dockSettings.toggle();
-    }
-
-    function openWhatsAppSettings() {
-        whatsappSettings.open();
-    }
-
-    function toggleWhatsAppSettings() {
-        whatsappSettings.toggle();
     }
 
     IpcHandler {
@@ -107,10 +81,6 @@ Item {
             root.setNoLimitsView(view);
         }
 
-        function toggleWhatsApp(): void {
-            root.toggleWhatsApp();
-        }
-
         function openDockSettings(): void {
             root.openDockSettings();
         }
@@ -123,17 +93,6 @@ Item {
             dockSettings.close();
         }
 
-        function openWhatsAppSettings(): void {
-            root.openWhatsAppSettings();
-        }
-
-        function toggleWhatsAppSettings(): void {
-            root.toggleWhatsAppSettings();
-        }
-
-        function closeWhatsAppSettings(): void {
-            whatsappSettings.close();
-        }
     }
 
     CustomShortcut {
@@ -155,20 +114,9 @@ Item {
     }
 
     CustomShortcut {
-        name: "whatsapp"
-        description: "Toggle WhatsApp panel"
-        onPressed: root.toggleWhatsApp()
-    }
-
-    CustomShortcut {
         name: "docksettings"
         description: "Toggle dock settings window"
         onPressed: root.toggleDockSettings()
     }
 
-    CustomShortcut {
-        name: "whatsappsettings"
-        description: "Toggle WhatsApp settings window"
-        onPressed: root.toggleWhatsAppSettings()
-    }
 }

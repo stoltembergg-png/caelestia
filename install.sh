@@ -20,8 +20,6 @@ SHELL_QML="$DEST_ROOT/shell.qml"
 MARK_BEGIN="// >>> caelestia-extras"
 MARK_END="// <<< caelestia-extras"
 LOADER_LINE='Loader { source: "extras/Extras.qml"; asynchronous: true }'
-PRAGMA_MARK="// >>> caelestia-extras pragma"
-PRAGMA_LINE='//@ pragma EnableQtWebEngineQuick'
 STAMP="$(date +%Y%m%d%H%M%S)"
 
 if [ ! -f "$SHELL_QML" ]; then
@@ -57,20 +55,6 @@ else
   exit 2
 fi
 
-# 3. pragma do WebEngine (o launch.cpp do patch só lê isso do arquivo de config)
-if grep -qF "EnableQtWebEngineQuick" "$SHELL_QML"; then
-  echo "shell.qml: pragma EnableQtWebEngineQuick já presente."
-else
-  cp "$SHELL_QML" "$SHELL_QML.pragma.bak-$STAMP"
-  TMP="$SHELL_QML.tmp.$$"
-  {
-    printf '%s\n%s\n' "$PRAGMA_MARK" "$PRAGMA_LINE"
-    cat "$SHELL_QML"
-  } > "$TMP"
-  mv "$TMP" "$SHELL_QML"
-  echo "shell.qml: pragma EnableQtWebEngineQuick adicionado no topo (backup .pragma.bak-$STAMP)."
-fi
-
 # 4. wrapper qs (build patchado com WebView)
 mkdir -p "$HOME/.local/bin"
 QS_DST="$HOME/.local/bin/qs"
@@ -87,7 +71,7 @@ fi
 
 # 5. patches opcionais do core (barra, dock, Nexus) + migração (melhor esforço)
 if command -v python3 >/dev/null 2>&1; then
-  for p in bar dock nexus whatsapp; do
+  for p in bar dock nexus; do
     python3 "$REPO_DIR/scripts/patch-caelestia-$p.py" "$DEST_ROOT" \
       || echo "AVISO: patch '$p' não aplicado; rode depois: python3 scripts/patch-caelestia-$p.py \"$DEST_ROOT\"" >&2
   done
@@ -105,9 +89,9 @@ Pronto. Passos finais:
 - Reinicie o shell:  qs -c caelestia kill   (ou reinicie a sessão)
 - Atalhos (Hyprland/Lua):
     hl.dsp.global("caelestia:quickactions")   hl.dsp.global("caelestia:dock")
-    hl.dsp.global("caelestia:nolimits")       hl.dsp.global("caelestia:whatsapp")
+    hl.dsp.global("caelestia:nolimits")
 - IPC:  qs -c caelestia ipc call extras toggleQuickActions | setQuickActionsTab <n> |
-        toggleDock | toggleNoLimits | toggleWhatsApp
+        toggleDock | toggleNoLimits
 - Config: ~/.config/caelestia/extras.json (criado com defaults na 1ª execução)
 - Docs: docs/INTEGRATION.md (smoke test) e docs/SWITCH-PLAN.md (troca do Serpantinum)
 
@@ -116,8 +100,8 @@ Importante (1º boot): depois de rodar o Caelestia uma vez, reaplique:
   bash scripts/migrate-serpantinum.sh                        # extras.json idem
 
 Notas:
-- O WhatsApp exige o Quickshell patchado (WebView). O wrapper ~/.local/bin/qs deve vir
-  antes de /usr/bin no PATH, e o build precisa existir (scripts/build-quickshell-webview.sh).
+- O módulo WhatsApp WebView foi REMOVIDO; a integração nativa vive no repo
+  caelestia-whatsapp (daemon Go + UDS), ver docs/ARQUITETURA.md de lá.
 - Se o Caelestia foi instalado via CMake (e não clonado como fork), o CMake não copia a
   pasta extras/ — nesse caso rode o Caelestia a partir do fork em ~/.config/quickshell/caelestia.
 EOF
