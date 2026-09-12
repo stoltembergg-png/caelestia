@@ -34,6 +34,9 @@ Item {
     property var upload: null
     property string reactions: ""
     property bool compact: false
+    // Ritmo/agrupamento (calculado pelo delegate a partir dos vizinhos).
+    property bool groupStart: true
+    property bool groupEnd: true
 
     signal contextRequested()
 
@@ -138,9 +141,17 @@ Item {
         width: Math.min(root.maxWidth, implicitWidth)
         implicitHeight: content.implicitHeight + root._vpad * 2
         radius: Tokens.rounding.large
-        bottomRightRadius: root.fromMe ? Tokens.rounding.extraSmall : Tokens.rounding.large
-        bottomLeftRadius: root.fromMe ? Tokens.rounding.large : Tokens.rounding.extraSmall
-        color: root.fromMe ? Colours.palette.m3primaryContainer : Colours.tPalette.m3surfaceContainerHigh
+        // Superfícies M3: saída = primaryContainer (azul); entrada =
+        // surfaceContainerHighest com um fio sutil para descolar do painel.
+        color: root.fromMe ? Colours.palette.m3primaryContainer : Colours.tPalette.m3surfaceContainerHighest
+        border.width: root.fromMe ? 0 : 1
+        border.color: Qt.alpha(Colours.palette.m3outlineVariant, 0.45)
+        // "Cauda" só no fim do grupo; dentro do grupo o canto do remetente fica
+        // um pouco menor para sugerir a pilha (ritmo).
+        topLeftRadius: (!root.fromMe && !root.groupStart) ? Tokens.rounding.small : Tokens.rounding.large
+        topRightRadius: (root.fromMe && !root.groupStart) ? Tokens.rounding.small : Tokens.rounding.large
+        bottomLeftRadius: !root.fromMe ? (root.groupEnd ? Tokens.rounding.extraSmall : Tokens.rounding.small) : Tokens.rounding.large
+        bottomRightRadius: root.fromMe ? (root.groupEnd ? Tokens.rounding.extraSmall : Tokens.rounding.small) : Tokens.rounding.large
 
         ColumnLayout {
             id: content

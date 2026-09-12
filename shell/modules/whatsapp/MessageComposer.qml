@@ -355,17 +355,11 @@ ColumnLayout {
         id: bar
 
         Layout.fillWidth: true
-        color: Colours.tPalette.m3surfaceContainer
+        // Foco sutil sem contorno: só um leve clareamento da superfície
+        // (animado pelo Behavior on color do StyledRect).
+        color: input.activeFocus ? Colours.tPalette.m3surfaceContainerHighest : Colours.tPalette.m3surfaceContainer
         radius: Tokens.rounding.extraLarge
-        border.width: input.activeFocus ? 1 : 0
-        border.color: Colours.palette.m3primary
         implicitHeight: row.implicitHeight + root._pad * 2
-
-        Behavior on border.width {
-            Anim {
-                type: Anim.FastEffects
-            }
-        }
 
         RowLayout {
             id: row

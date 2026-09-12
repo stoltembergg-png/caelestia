@@ -33,9 +33,11 @@ Item {
 
                 anchors.fill: parent
                 model: WhatsAppClient.messages
-                spacing: root.compact ? 1 : Tokens.spacing.extraSmall
-                topMargin: root.compact ? Tokens.spacing.extraSmall : Tokens.spacing.small
-                bottomMargin: root.compact ? Tokens.spacing.small : Tokens.spacing.small
+                // O ritmo vertical é do delegate (dia/grupo), não do ListView.
+                spacing: 0
+                topMargin: root.compact ? Tokens.spacing.small : Tokens.padding.medium
+                // Respiro no fim acima do composer (evita balão colado/cortado).
+                bottomMargin: root.compact ? Tokens.padding.medium : Tokens.padding.large
                 boundsBehavior: Flickable.StopAtBounds
                 reuseItems: true
                 cacheBuffer: 4000
@@ -44,6 +46,7 @@ Item {
                     Item {
                         id: wrapper
 
+                        required property int index
                         required property string messageId
                         required property string chat
                         required property string sender
@@ -62,14 +65,68 @@ Item {
                         required property string localPath
                         required property var upload
 
+                        readonly property var _prev: wrapper.index > 0 ? WhatsAppClient.messages.get(wrapper.index - 1) : null
+                        readonly property var _next: wrapper.index < WhatsAppClient.messages.count - 1 ? WhatsAppClient.messages.get(wrapper.index + 1) : null
+
+                        function _dayKey(ts): string {
+                            const d = new Date(Number(ts || 0));
+                            if (isNaN(d.getTime()))
+                                return "";
+                            return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+                        }
+
+                        function _dayLabel(ts): string {
+                            const d = new Date(Number(ts || 0));
+                            if (isNaN(d.getTime()))
+                                return "";
+                            const now = new Date();
+                            const a = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+                            const t = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                            if (a === t)
+                                return "Hoje";
+                            if (a === t - 86400000)
+                                return "Ontem";
+                            return Qt.formatDateTime(d, "dd/MM/yyyy");
+                        }
+
+                        readonly property bool dayStart: !wrapper._prev || wrapper._dayKey(wrapper._prev.timestamp) !== wrapper._dayKey(wrapper.timestamp)
+                        readonly property bool groupStart: wrapper.dayStart || !wrapper._prev || wrapper._prev.fromMe !== wrapper.fromMe || wrapper._prev.sender !== wrapper.sender
+                        readonly property bool groupEnd: !wrapper._next || wrapper._next.fromMe !== wrapper.fromMe || wrapper._next.sender !== wrapper.sender || wrapper._dayKey(wrapper._next.timestamp) !== wrapper._dayKey(wrapper.timestamp)
+                        readonly property real gapGroup: root.compact ? Tokens.spacing.small : Tokens.spacing.medium
+                        readonly property real gapTight: root.compact ? 1 : 2
+                        readonly property real topGap: wrapper.dayStart ? (dayPill.implicitHeight + wrapper.gapGroup) : (wrapper.groupStart ? wrapper.gapGroup : wrapper.gapTight)
+
                         width: ListView.view ? ListView.view.width : 0
-                        height: bubble.implicitHeight
+                        height: wrapper.topGap + bubble.implicitHeight
+
+                        // Separador de dia (Hoje/Ontem/data)
+                        StyledRect {
+                            id: dayPill
+
+                            visible: wrapper.dayStart
+                            anchors.top: parent.top
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            implicitWidth: dayLabel.implicitWidth + Tokens.spacing.medium * 2
+                            implicitHeight: dayLabel.implicitHeight + Tokens.spacing.extraSmall
+                            radius: Tokens.rounding.full
+                            color: Colours.tPalette.m3surfaceContainerHighest
+
+                            StyledText {
+                                id: dayLabel
+
+                                anchors.centerIn: parent
+                                text: wrapper._dayLabel(wrapper.timestamp)
+                                color: Colours.palette.m3onSurfaceVariant
+                                font: Tokens.font.label.small
+                            }
+                        }
 
                         MessageBubble {
                             id: bubble
 
                             anchors.left: parent.left
                             anchors.right: parent.right
+                            y: wrapper.topGap
                             messageId: wrapper.messageId
                             chat: wrapper.chat
                             sender: wrapper.sender
@@ -88,6 +145,8 @@ Item {
                             localPath: wrapper.localPath
                             upload: wrapper.upload
                             compact: root.compact
+                            groupStart: wrapper.groupStart
+                            groupEnd: wrapper.groupEnd
 
                             onContextRequested: contextMenu.openFor(bubble, wrapper.messageId, wrapper.chat, wrapper.fromMe, !!(wrapper.media && String(wrapper.media.kind || "").length))
                         }
