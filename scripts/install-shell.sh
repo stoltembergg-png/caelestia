@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 #
 # install-shell.sh — instala o módulo QML nativo do WhatsApp no core do
-# Caelestia e reaplica o patch dos drawers (Fase 3 do caelestia-whatsapp).
+# Caelestia e aplica os patches do core (Fases 3 e 5 do caelestia-whatsapp).
 #
 # O que faz (idempotente, SEM sudo):
 #   1. copia shell/ do repositório para $CAELESTIA_DIR/extras/whatsapp/
 #      (incluindo o qmldir próprio: `module qs.extras.whatsapp`);
 #   2. roda patches/patch-caelestia-whatsapp.py "$CAELESTIA_DIR" para ligar o
 #      Drawer ao core (Panels/ContentWindow/Regions/Interactions);
-#   3. imprime os próximos passos (reiniciar o shell, atalho, cwctl).
+#   3. roda patches/patch-caelestia-whatsapp-bar.py "$CAELESTIA_DIR" para o
+#      badge/entrada na barra (+ bar.entries do shell.json);
+#   4. roda patches/patch-caelestia-whatsapp-nexus.py "$CAELESTIA_DIR" para a
+#      página "WhatsApp" nos Ajustes (Nexus);
+#   5. imprime os próximos passos (reiniciar o shell, atalho, cwctl).
 #
 # Uso:
 #   scripts/install-shell.sh [CAELESTIA_DIR] [--dry-run] [--help]
@@ -32,14 +36,14 @@ usage() {
 Uso: scripts/install-shell.sh [CAELESTIA_DIR] [--dry-run] [--help]
 
 Copia o módulo QML `shell/` do repositório para
-$CAELESTIA_DIR/extras/whatsapp/ e aplica o patch idempotente do core
-(modules/drawers/{Panels,ContentWindow,Regions,Interactions}.qml).
+$CAELESTIA_DIR/extras/whatsapp/ e aplica os patches idempotentes do core
+(drawers, barra e Nexus).
 
 Argumentos:
   CAELESTIA_DIR   diretório do core Caelestia.
                   Default: $CAELESTIA_DIR, senão ~/.config/quickshell/caelestia
   --dry-run       não copia nem altera ficheiros; só reporta (encaminhado para
-                  o patch)
+                  os patches)
 
 Não usa sudo. Não toca no daemon do WhatsApp.
 EOF
@@ -71,6 +75,8 @@ REPO_ROOT="$(dirname -- "$SCRIPT_DIR")"
 
 SHELL_SRC="$REPO_ROOT/shell"
 PATCH="$REPO_ROOT/patches/patch-caelestia-whatsapp.py"
+PATCH_BAR="$REPO_ROOT/patches/patch-caelestia-whatsapp-bar.py"
+PATCH_NEXUS="$REPO_ROOT/patches/patch-caelestia-whatsapp-nexus.py"
 
 CAELESTIA_DIR="${POSITIONAL[0]:-${CAELESTIA_DIR:-$HOME/.config/quickshell/caelestia}}"
 CAELESTIA_DIR="${CAELESTIA_DIR/#\~/$HOME}"
@@ -95,7 +101,11 @@ if ! grep -q '^module[[:space:]]\+qs\.extras\.whatsapp[[:space:]]*$' "$SHELL_SRC
 	warn "o import `qs.extras.whatsapp` do core pode não resolver"
 fi
 [ -f "$PATCH" ] || die "patch não encontrado: $PATCH"
+[ -f "$PATCH_BAR" ] || die "patch da barra não encontrado: $PATCH_BAR"
+[ -f "$PATCH_NEXUS" ] || die "patch do Nexus não encontrado: $PATCH_NEXUS"
 [ -d "$DRAWERS_DIR" ] || die "não encontrei os drawers do core: $DRAWERS_DIR (CAELESTIA_DIR correto?)"
+[ -f "$CAELESTIA_DIR/modules/bar/Bar.qml" ] || die "não encontrei modules/bar/Bar.qml em $CAELESTIA_DIR (CAELESTIA_DIR correto?)"
+[ -d "$CAELESTIA_DIR/modules/nexus" ] || die "não encontrei modules/nexus em $CAELESTIA_DIR (CAELESTIA_DIR correto?)"
 
 # ---------------------------------------------------------------------------
 # 1. Copiar o módulo QML (idempotente)
@@ -112,15 +122,27 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 2. Aplicar o patch do core (idempotente)
+# 2. Aplicar os patches do core (idempotentes)
 # ---------------------------------------------------------------------------
-info "a aplicar patch do core…"
 if [ "$DRY_RUN" -eq 1 ]; then
-	python3 "$PATCH" "$CAELESTIA_DIR" --dry-run
+	PATCH_ARGS=("$CAELESTIA_DIR" --dry-run)
 else
-	python3 "$PATCH" "$CAELESTIA_DIR"
+	PATCH_ARGS=("$CAELESTIA_DIR")
 fi
-ok "patch do core concluído"
+
+info "a aplicar patch dos drawers (Panels/ContentWindow/Regions/Interactions)…"
+python3 "$PATCH" "${PATCH_ARGS[@]}"
+ok "patch dos drawers concluído"
+
+info "a aplicar patch da barra (badge + entrada em bar.entries)…"
+python3 "$PATCH_BAR" "${PATCH_ARGS[@]}"
+ok "patch da barra concluído"
+
+info "a aplicar patch do Nexus (página \"WhatsApp\" nos Ajustes)…"
+python3 "$PATCH_NEXUS" "${PATCH_ARGS[@]}"
+ok "patch do Nexus concluído"
+
+ok "patches do core concluídos (idempotentes)"
 
 # ---------------------------------------------------------------------------
 # 3. Próximos passos
@@ -136,6 +158,7 @@ Próximos passos:
 
   2) Abrir/fechar o painel:
        - hover à direita da barra (dwell de ~450 ms), ou
+       - clique no badge do WhatsApp na barra, ou
        - atalho global \`caelestia:whatsapp\` (se existir na sua config Hyprland), ou
        - pelo binding IPC/Hyprland equivalente.
 
@@ -143,6 +166,10 @@ Próximos passos:
        cwctl status
        cwctl login     # parear (imprime o QR no terminal)
 
+  4) Página "WhatsApp" nos Ajustes (Nexus > Shell) para conexão, notificações
+     e conta.
+
 Desinstalar: ver docs/INTEGRATION.md (remover extras/whatsapp e restaurar
-os .bak-* do core).
+os .bak-* do core: drawers, Bar.qml, PageRegistry.qml, PageCompRegistry.qml
+e shell.json).
 EOF

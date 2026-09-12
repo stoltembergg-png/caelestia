@@ -8,16 +8,15 @@ Integração **nativa** do WhatsApp para o Caelestia Shell: daemon Go (`whatsmeo
 
 ## Status
 
-**Fase 2 concluída**: daemon + IPC + CLI + systemd.
+**MVP completo (Fases 1–5)**: daemon + IPC + CLI + systemd + **UI QML nativa** + integrações no Caelestia.
 
-- **2.1** scaffold Go, config/logging, SQLite versionado (`cae_*`) e testes.
-- **2.2** servidor IPC UDS NDJSON (protocolo, limites, peer-UID, broadcast).
-- **2.3** cliente `whatsmeow`, QR/login, máquina de estados e pump de eventos (`auth.*`).
-- **2.4** repositório, pipeline de eventos, métodos IPC e `cwctl` (QR no terminal).
-- **2.5** systemd user service, instalador local sem `sudo` e documentação.
+- **F1** documento técnico (`docs/ARQUITETURA.md`).
+- **F2** daemon Go: scaffold, SQLite (`cae_*` + `whatsmeow_*`), IPC UDS NDJSON, QR/login, eventos, `cwctl`, systemd.
+- **F3** UI QML nativa: serviço `WhatsAppClient` (socket/backoff/fila), drawer, lista de chats, conversa, composer e QR — estilo Caelestia.
+- **F4** (parcial no MVP) eventos de domínio em tempo real (`message.received/updated`, `receipt.updated`, `chat.updated`), read receipts, nomes resolvidos (contatos/LID/pushname/grupo).
+- **F5** badge de não lidas na barra, página “WhatsApp” no Nexus e notificações nativas (`gdbus` + ação “Abrir”).
 
-O frontend QML/Quickshell (fases 3+) ainda não foi implementado; o daemon roda
-independente do shell.
+O daemon roda independente do shell (`systemctl --user`); a UI reconecta sozinha ao socket.
 
 ## Aviso
 
@@ -94,10 +93,11 @@ dono. Sem HTTP/TCP.
 ## Limitações conhecidas
 
 - **Sem mídia e sem recursos avançados de grupos** ainda (download/envio de
-  imagens, áudio, documentos, reações, reply, busca, etc. são fases 3+). O
+  imagens, áudio, documentos, reações, reply, busca, etc. são fases futuras). O
   histórico e os eventos de domínio (`message.received`, `receipt.updated`, …)
-  são persistidos, mas ainda **não** são publicados no IPC.
-- **Sem frontend QML**: não há painel/badge no shell Caelestia nesta fase.
+  já são persistidos e publicados no IPC em tempo real.
+- **Nomes de contatos** dependem do store do whatsmeow (contatos/LID/pushname);
+  sem contato salvo, cai num PN formatado (`+55…`).
 - **`whatsmeow` é não oficial** e viola os ToS do WhatsApp; há risco de
   restrição/ban. Use uma conta que você aceita perder e sem automação.
 - **`whatsmeow` sem releases estáveis**: versões fixadas por commit; podem
