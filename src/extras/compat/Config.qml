@@ -41,6 +41,19 @@ Item {
                 "autohide": false,
                 "style": "modular"
             },
+            "whatsapp": {
+                "openOnHover": true,
+                "hoverDwell": 450,
+                "hideDelay": 300,
+                "minimalMode": "full",
+                "hideSidebar": true,
+                "hideTabs": true,
+                "blur": true,
+                "transparency": 85,
+                "unloadOnClose": false,
+                "fullscreenHide": true,
+                "sidebarShortcut": "Ctrl+B"
+            },
             "general": {
                 "uiScale": 1.0,
                 "language": "en"

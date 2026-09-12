@@ -87,7 +87,7 @@ fi
 
 # 5. patches opcionais do core (barra, dock, Nexus) + migração (melhor esforço)
 if command -v python3 >/dev/null 2>&1; then
-  for p in bar dock nexus; do
+  for p in bar dock nexus whatsapp; do
     python3 "$REPO_DIR/scripts/patch-caelestia-$p.py" "$DEST_ROOT" \
       || echo "AVISO: patch '$p' não aplicado; rode depois: python3 scripts/patch-caelestia-$p.py \"$DEST_ROOT\"" >&2
   done

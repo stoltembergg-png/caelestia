@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
-"""Integra a página "Dock" aos Ajustes (Nexus) do core do Caelestia (fork local), de forma idempotente.
+"""Integra as páginas "Dock" e "WhatsApp" aos Ajustes (Nexus) do core do Caelestia (fork local), de forma idempotente.
 
 - modules/nexus/PageRegistry.qml:
     * `import qs.extras.settings as ExtrasSettings` (namespaced, para não colidir);
-    * inserção, NO FIM da lista `pages`, da entrada:
-      { label: qsTr("Dock"), icon: "dock", description: qsTr("Comportamento, aparência e animações da dock"), category: "shell" }.
+    * inserção, NO FIM da lista `pages`, das entradas:
+      { label: qsTr("Dock"), icon: "dock", description: qsTr("Comportamento, aparência e animações da dock"), category: "shell" } e
+      { label: qsTr("WhatsApp"), icon: "chat", description: qsTr("Comportamento, minimalismo e aparência"), category: "shell" }.
 - modules/nexus/PageCompRegistry.qml:
     * o mesmo import;
     * inserção, NO FIM da lista `pageComps`, de:
-      Component { StackPage { Component { ExtrasSettings.DockPage {} } } }.
+      Component { StackPage { Component { ExtrasSettings.DockPage {} } } } e
+      Component { StackPage { Component { ExtrasSettings.WhatsAppPage {} } } }.
 - As duas listas (páginas × componentes) devem terminar com o MESMO tamanho; o
   script compara as contagens e aborta com aviso se divergirem.
 - Inserir sempre no fim evita deslocar os índices existentes (o fork já tem
   páginas custom).
 
-Todas as edições usam os marcadores `// >>> caelestia-extras dock-settings` /
-`// <<< caelestia-extras dock-settings` e são idempotentes (a 2ª execução é
-no-op). Cada arquivo alterado ganha backup `.bak-*`.
+Cada bloco usa os marcadores `// >>> caelestia-extras <nome>-settings` /
+`// <<< caelestia-extras <nome>-settings` (Dock e WhatsApp) e é idempotente
+(a 2ª execução é no-op). Cada arquivo alterado ganha backup `.bak-*`.
 
 Uso: python3 scripts/patch-caelestia-nexus.py [CAELESTIA_DIR] [--dry-run]
 """
@@ -29,12 +31,16 @@ import re
 import shutil
 import sys
 
-MARK_BEGIN = "// >>> caelestia-extras dock-settings"
-MARK_END = "// <<< caelestia-extras dock-settings"
 IMPORT_LINE = "import qs.extras.settings as ExtrasSettings"
 
-# Entrada da PageRegistry (indentação RELATIVA; insert_entry prefixa o recuo da lista).
-PAGE_ENTRY = (
+# Marcadores por bloco (a importação é compartilhada e fica sob o marcador da Dock).
+DOCK_MARK_BEGIN = "// >>> caelestia-extras dock-settings"
+DOCK_MARK_END = "// <<< caelestia-extras dock-settings"
+WA_MARK_BEGIN = "// >>> caelestia-extras whatsapp-settings"
+WA_MARK_END = "// <<< caelestia-extras whatsapp-settings"
+
+# Entradas da PageRegistry (indentação RELATIVA; insert_entry prefixa o recuo da lista).
+PAGE_ENTRY_DOCK = (
     "{\n"
     '    label: qsTr("Dock"),\n'
     '    icon: "dock",\n'
@@ -43,8 +49,17 @@ PAGE_ENTRY = (
     "}"
 )
 
-# Entrada da PageCompRegistry (indentação RELATIVA).
-COMP_ENTRY = (
+PAGE_ENTRY_WA = (
+    "{\n"
+    '    label: qsTr("WhatsApp"),\n'
+    '    icon: "chat",\n'
+    '    description: qsTr("Comportamento, minimalismo e aparência"),\n'
+    '    category: "shell"\n'
+    "}"
+)
+
+# Entradas da PageCompRegistry (indentação RELATIVA).
+COMP_ENTRY_DOCK = (
     "Component {\n"
     "    StackPage {\n"
     "        Component {\n"
@@ -54,8 +69,32 @@ COMP_ENTRY = (
     "}"
 )
 
-PAGE_SENTINEL = 'label: qsTr("Dock")'
-COMP_SENTINEL = "ExtrasSettings.DockPage"
+COMP_ENTRY_WA = (
+    "Component {\n"
+    "    StackPage {\n"
+    "        Component {\n"
+    "            ExtrasSettings.WhatsAppPage {}\n"
+    "        }\n"
+    "    }\n"
+    "}"
+)
+
+PAGE_SENTINEL_DOCK = 'label: qsTr("Dock")'
+PAGE_SENTINEL_WA = 'label: qsTr("WhatsApp")'
+COMP_SENTINEL_DOCK = "ExtrasSettings.DockPage"
+COMP_SENTINEL_WA = "ExtrasSettings.WhatsAppPage"
+
+# Blocos na ORDEM de inserção (Dock antes de WhatsApp, ambos no fim da lista):
+# (entrada, sentinela, marcador-início, marcador-fim).
+PAGE_BLOCKS = [
+    (PAGE_ENTRY_DOCK, PAGE_SENTINEL_DOCK, DOCK_MARK_BEGIN, DOCK_MARK_END),
+    (PAGE_ENTRY_WA, PAGE_SENTINEL_WA, WA_MARK_BEGIN, WA_MARK_END),
+]
+COMP_BLOCKS = [
+    (COMP_ENTRY_DOCK, COMP_SENTINEL_DOCK, DOCK_MARK_BEGIN, DOCK_MARK_END),
+    (COMP_ENTRY_WA, COMP_SENTINEL_WA, WA_MARK_BEGIN, WA_MARK_END),
+]
+
 PAGES_RE = r"readonly\s+property\s+list<[^>]+>\s+pages\s*:\s*\["
 COMPS_RE = r"readonly\s+property\s+list<[^>]+>\s+pageComps\s*:\s*\["
 IMPORT_RE = r"^[ \t]*" + re.escape(IMPORT_LINE) + r"[ \t]*$"
@@ -194,11 +233,11 @@ def add_marked_import(text: str) -> tuple[str, bool, bool]:
     if not idxs:
         return text, False, False
     ins = max(idxs) + 1
-    lines[ins:ins] = ["", MARK_BEGIN, IMPORT_LINE, MARK_END]
+    lines[ins:ins] = ["", DOCK_MARK_BEGIN, IMPORT_LINE, DOCK_MARK_END]
     return "\n".join(lines), True, True
 
 
-def insert_entry(text: str, prop_re: str, entry: str) -> tuple[str, bool]:
+def insert_entry(text: str, prop_re: str, entry: str, mark_begin: str, mark_end: str) -> tuple[str, bool]:
     """Insere a entrada marcada antes do `]` que fecha a lista de `prop_re`."""
     _, end = list_body(text, prop_re)
     if end is None:
@@ -213,14 +252,14 @@ def insert_entry(text: str, prop_re: str, entry: str) -> tuple[str, bool]:
         text = text[:last + 1] + "," + text[last + 1:]
         end += 1
         line_start += 1
-    block_lines = [indent + MARK_BEGIN]
+    block_lines = [indent + mark_begin]
     block_lines += [indent + ln for ln in entry.split("\n")]
-    block_lines.append(indent + MARK_END)
+    block_lines.append(indent + mark_end)
     block = "\n".join(block_lines) + "\n"
     return text[:line_start] + block + text[line_start:], True
 
 
-def build_registry(text: str, prop_re: str, entry: str, sentinel: str, label: str) -> tuple[str, bool, int | None]:
+def build_registry(text: str, prop_re: str, blocks, label: str) -> tuple[str, bool, int | None]:
     changed = False
 
     text, imp_changed, found_imports = add_marked_import(text)
@@ -229,14 +268,14 @@ def build_registry(text: str, prop_re: str, entry: str, sentinel: str, label: st
     elif not found_imports:
         print(f"AVISO: nenhum 'import' encontrado em {label}; import do extras ignorado")
 
-    if sentinel in text:
-        pass
-    else:
-        text, ok = insert_entry(text, prop_re, entry)
+    for entry, sentinel, mark_begin, mark_end in blocks:
+        if sentinel in text:
+            continue
+        text, ok = insert_entry(text, prop_re, entry, mark_begin, mark_end)
         if ok:
             changed = True
         else:
-            print(f"AVISO: lista alvo não encontrada em {label}; entrada Dock ignorada")
+            print(f"AVISO: lista alvo não encontrada em {label}; entrada ignorada")
 
     return text, changed, count_list(text, prop_re)
 
@@ -270,8 +309,8 @@ def main() -> int:
     with open(page_comp, encoding="utf-8") as f:
         pc_original = f.read()
 
-    pr_text, pr_changed, pr_count = build_registry(pr_original, PAGES_RE, PAGE_ENTRY, PAGE_SENTINEL, "PageRegistry.qml")
-    pc_text, pc_changed, pc_count = build_registry(pc_original, COMPS_RE, COMP_ENTRY, COMP_SENTINEL, "PageCompRegistry.qml")
+    pr_text, pr_changed, pr_count = build_registry(pr_original, PAGES_RE, PAGE_BLOCKS, "PageRegistry.qml")
+    pc_text, pc_changed, pc_count = build_registry(pc_original, COMPS_RE, COMP_BLOCKS, "PageCompRegistry.qml")
 
     print(f"PageRegistry.qml: {pr_count} páginas | PageCompRegistry.qml: {pc_count} componentes")
     if pr_count is None or pc_count is None:

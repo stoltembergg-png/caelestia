@@ -1,3 +1,4 @@
 module qs.extras.whatsapp
 WhatsAppOverlay 1.0 WhatsAppOverlay.qml
 WhatsAppPanel 1.0 WhatsAppPanel.qml
+Drawer 1.0 WhatsAppDrawer.qml

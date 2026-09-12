@@ -10,4 +10,6 @@ singleton FloatingController 1.0 compat/FloatingController.qml
 singleton NotesManager 1.0 compat/NotesManager.qml
 singleton NoLimits 1.0 nolimits/NoLimits.qml
 singleton DockState 1.0 dock/DockState.qml
+singleton WhatsAppState 1.0 whatsapp/WhatsAppState.qml
+singleton WhatsAppProfile 1.0 whatsapp/WhatsAppProfile.qml
 Extras 1.0 Extras.qml
