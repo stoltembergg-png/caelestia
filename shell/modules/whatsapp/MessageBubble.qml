@@ -30,6 +30,8 @@ Item {
     property bool deleted: false
     property string status: ""
     property var media: null
+    property string localPath: ""
+    property var upload: null
     property string reactions: ""
 
     signal contextRequested()
@@ -73,6 +75,10 @@ Item {
     }
 
     function statusIcon(): string {
+        if (root.upload && root.upload.state === "sending")
+            return "schedule";
+        if (root.upload && root.upload.state === "failed")
+            return "error_outline";
         if (root.status === "read" || root.status === "delivered")
             return "done_all";
         return "done";
@@ -110,6 +116,7 @@ Item {
     // roubar o clique da mídia.
     MouseArea {
         anchors.fill: parent
+        enabled: !root.upload
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         onPressAndHold: root.contextRequested()
         onClicked: mouse => {
@@ -194,6 +201,8 @@ Item {
                 type: root.type
                 text: root.text
                 media: root.media
+                localPath: root.localPath
+                upload: root.upload
                 fromMe: root.fromMe
             }
 
@@ -269,7 +278,7 @@ Item {
                         Layout.alignment: Qt.AlignVCenter
                         visible: root.fromMe && !root.deleted
                         text: root.statusIcon()
-                        color: root.status === "read" ? Colours.palette.m3primary : (root.fromMe ? Colours.palette.m3onPrimaryContainer : Colours.palette.m3onSurfaceVariant)
+                        color: (root.upload && root.upload.state === "failed") ? Colours.palette.m3error : (root.status === "read" ? Colours.palette.m3primary : (root.fromMe ? Colours.palette.m3onPrimaryContainer : Colours.palette.m3onSurfaceVariant))
                         fontStyle: Tokens.font.icon.builders.small.scale(0.85).build()
                     }
                 }

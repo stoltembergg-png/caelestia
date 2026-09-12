@@ -41,6 +41,11 @@ type methodFake struct {
 
 	downloadData []byte
 	downloadErr  error
+
+	uploadResp whatsmeow.UploadResponse
+	uploadErr  error
+	uploadApp  whatsmeow.MediaType
+	uploadRead int64
 }
 
 func (f *methodFake) SendMessage(_ context.Context, to types.JID, message *waE2E.Message, _ ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
@@ -80,6 +85,21 @@ func (f *methodFake) DownloadToFile(_ context.Context, _ whatsmeow.DownloadableM
 	return err
 }
 
+func (f *methodFake) UploadReader(_ context.Context, plaintext io.Reader, _ io.ReadWriteSeeker, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error) {
+	f.mu.Lock()
+	f.uploadApp = appInfo
+	f.mu.Unlock()
+	if f.uploadErr != nil {
+		return whatsmeow.UploadResponse{}, f.uploadErr
+	}
+	// Drain the plaintext so the counting progressReader is exercised.
+	n, _ := io.Copy(io.Discard, plaintext)
+	f.mu.Lock()
+	f.uploadRead = n
+	f.mu.Unlock()
+	return f.uploadResp, nil
+}
+
 func (f *methodFake) BuildReaction(chat, sender types.JID, id types.MessageID, reaction string) *waE2E.Message {
 	return &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{
 		Key: &waCommon.MessageKey{
@@ -100,6 +120,13 @@ func newTestMethods(t *testing.T) (*Methods, *Service, *methodFake, *database.Re
 	mf := &methodFake{fakeClient: base, sendResp: whatsmeow.SendResponse{
 		ID:        types.MessageID("server-id-1"),
 		Timestamp: time.UnixMilli(1700000000000),
+	}, uploadResp: whatsmeow.UploadResponse{
+		URL:           "https://mmg.whatsapp.net/d/f/abc",
+		DirectPath:    "/v/t62.7118-24/abc",
+		MediaKey:      make([]byte, 32),
+		FileSHA256:    make([]byte, 32),
+		FileEncSHA256: make([]byte, 32),
+		FileLength:    4,
 	}}
 	svc.mu.Lock()
 	svc.client = mf

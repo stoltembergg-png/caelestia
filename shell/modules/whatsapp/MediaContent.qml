@@ -1,10 +1,9 @@
-// MediaContent — corpo de mídia de um balão.
+// MediaContent — corpo de mídia de um balão (recebido ou em envio).
 //
-// Só usa caminhos (nunca bytes): thumbnail/full vêm de `media.thumb`/`media.path`.
-// Imagem/figurinha mostram a thumb inline; vídeo mostra a thumb com play; áudio e
-// documento são linhas com ícone/nome/tamanho. O clique baixa (media.download)
-// quando necessário e abre o arquivo com xdg-open (viewer do sistema).
-// Estados: baixando (spinner), falha (mostra "tentar de novo"), cache (abre direto).
+// Só usa caminhos (nunca bytes): thumb/full vêm de `media.thumb`/`media.path`;
+// no envio otimista usa `localPath` como preview. O clique baixa (media.download)
+// quando necessário e abre o arquivo com xdg-open. Estados de envio (upload):
+// enviando (spinner + pct) e falha (tentar de novo / descartar).
 
 pragma ComponentBehavior: Bound
 
@@ -23,10 +22,17 @@ Item {
     property string type: "text"
     property string text: ""
     property var media: null
+    property string localPath: ""
+    property var upload: null
     property bool fromMe: false
 
     property bool _busy: false
     property bool _error: false
+
+    readonly property bool _pending: root.upload !== null && root.upload !== undefined
+    readonly property bool _sending: root._pending && String(root.upload.state) === "sending"
+    readonly property bool _failed: root._pending && String(root.upload.state) === "failed"
+    readonly property int _pct: root._pending ? Number(root.upload.pct || 0) : 0
 
     readonly property string _kind: {
         const k = root.media && root.media.kind ? String(root.media.kind) : "";
@@ -36,9 +42,10 @@ Item {
     readonly property bool _framed: root._imageLike || root._kind === "video"
     readonly property string _path: root.media ? String(root.media.path || "") : ""
     readonly property string _thumb: root.media ? String(root.media.thumb || "") : ""
-    readonly property bool _hasImage: root._path.length > 0 || root._thumb.length > 0
+    readonly property string _local: root._pending ? String(root.localPath || "") : ""
+    readonly property bool _hasImage: root._path.length > 0 || root._thumb.length > 0 || root._local.length > 0
     readonly property string _imageSource: {
-        const p = root._path.length ? root._path : root._thumb;
+        const p = root._path.length ? root._path : (root._thumb.length ? root._thumb : root._local);
         return p.length ? "file://" + p : "";
     }
     readonly property real _prefW: root._kind === "sticker" ? 140 : 240
@@ -90,6 +97,8 @@ Item {
     }
 
     function _rowTitle(): string {
+        if (root._pending && root.upload && String(root.upload.name || "").length)
+            return String(root.upload.name);
         if (root._kind === "document" && root.text.length)
             return root.text;
         if (root._kind === "audio" && root.media && Number(root.media.duration) > 0) {
@@ -100,7 +109,7 @@ Item {
     }
 
     function _activate(): void {
-        if (root._busy)
+        if (root._busy || root._pending)
             return;
         root._error = false;
         if (root._path.length) {
@@ -163,15 +172,22 @@ Item {
         // Play (vídeo)
         MaterialIcon {
             anchors.centerIn: parent
-            visible: root._kind === "video" && root._hasImage
+            visible: root._kind === "video" && root._hasImage && !root._pending
             text: "play_circle"
             color: Qt.rgba(0, 0, 0, 0.65)
             fontStyle: Tokens.font.icon.builders.large.scale(1.6).build()
         }
 
+        // Scrim de envio
+        StyledRect {
+            anchors.fill: parent
+            visible: root._sending
+            color: Qt.alpha(Colours.palette.m3scrim, 0.45)
+        }
+
         LoadingIndicator {
             anchors.centerIn: parent
-            visible: root._busy
+            visible: root._busy || (root._sending && root._framed)
             implicitSize: 30
         }
     }
@@ -193,7 +209,7 @@ Item {
 
         Column {
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - Tokens.font.icon.large.pointSize - Tokens.spacing.small
+            width: parent.width - Tokens.font.icon.large.pointSize - Tokens.spacing.small - (root._pending ? 34 : 0)
 
             StyledText {
                 width: parent.width
@@ -206,30 +222,119 @@ Item {
 
             StyledText {
                 width: parent.width
-                visible: root.sizeText(root.media ? root.media.size : 0).length > 0
-                text: root.sizeText(root.media ? root.media.size : 0)
+                visible: root._pending ? true : root.sizeText(root.media ? root.media.size : 0).length > 0
+                text: {
+                    if (root._pending && root.upload)
+                        return root.sizeText(root.upload.size) + (root._sending && root._pct > 0 ? " · " + root._pct + "%" : "");
+                    return root.sizeText(root.media ? root.media.size : 0);
+                }
                 color: root.fromMe ? Qt.alpha(Colours.palette.m3onPrimaryContainer, 0.8) : Colours.palette.m3onSurfaceVariant
                 font: Tokens.font.label.small
             }
         }
     }
 
-    // Spinner e retry (linha)
     LoadingIndicator {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        visible: !root._framed && root._busy
+        visible: !root._framed && (root._busy || root._sending)
         implicitSize: 22
     }
 
-    // Clique
+    // Clique (abre/baixa). Fica desabilitado durante o envio.
     MouseArea {
         anchors.fill: parent
-        cursorShape: Qt.PointingHandCursor
+        enabled: !root._pending
+        cursorShape: enabled ? Qt.PointingHandCursor : undefined
         onClicked: root._activate()
     }
 
-    // Falha: reforço visual discreto
+    // Barra de progresso fina (imagem/vídeo em envio)
+    StyledRect {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: root._sending && root._framed
+        implicitHeight: 3
+        color: Qt.alpha(Colours.palette.m3scrim, 0.4)
+
+        StyledRect {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: parent.width * Math.max(0, Math.min(1, root._pct / 100))
+            color: Colours.palette.m3primary
+        }
+    }
+
+    // Falha de envio: scrim + ações
+    StyledRect {
+        anchors.fill: parent
+        visible: root._failed
+        radius: root._framed ? (root._kind === "sticker" ? Tokens.rounding.small : Tokens.rounding.medium) : Tokens.rounding.small
+        color: Qt.alpha(Colours.palette.m3scrim, 0.55)
+
+        Column {
+            anchors.centerIn: parent
+            spacing: Tokens.spacing.extraSmall
+
+            StyledText {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Falha ao enviar"
+                color: Colours.palette.m3error
+                font: Tokens.font.label.small
+            }
+
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: Tokens.spacing.extraSmall
+
+                StyledRect {
+                    implicitWidth: retryLabel.implicitWidth + Tokens.spacing.small * 2
+                    implicitHeight: retryLabel.implicitHeight + Tokens.spacing.extraSmall
+                    radius: Tokens.rounding.small
+                    color: Colours.palette.m3primary
+
+                    StyledText {
+                        id: retryLabel
+
+                        anchors.centerIn: parent
+                        text: "Tentar de novo"
+                        color: Colours.palette.m3onPrimary
+                        font: Tokens.font.label.small
+                    }
+
+                    StateLayer {
+                        radius: parent.radius
+                        onClicked: WhatsAppClient.retryUpload(root.upload ? root.upload.tempId : root.messageId)
+                    }
+                }
+
+                StyledRect {
+                    implicitWidth: discardLabel.implicitWidth + Tokens.spacing.small * 2
+                    implicitHeight: discardLabel.implicitHeight + Tokens.spacing.extraSmall
+                    radius: Tokens.rounding.small
+                    color: Colours.tPalette.m3surfaceContainerHighest
+
+                    StyledText {
+                        id: discardLabel
+
+                        anchors.centerIn: parent
+                        text: "Descartar"
+                        color: Colours.palette.m3onSurface
+                        font: Tokens.font.label.small
+                    }
+
+                    StateLayer {
+                        radius: parent.radius
+                        onClicked: WhatsAppClient.discardUpload(root.upload ? root.upload.tempId : root.messageId)
+                    }
+                }
+            }
+        }
+    }
+
+    // Falha de download (mídia recebida)
     StyledText {
         anchors.left: parent.left
         anchors.bottom: parent.bottom

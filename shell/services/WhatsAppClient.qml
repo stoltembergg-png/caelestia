@@ -197,6 +197,7 @@ Singleton {
     // Máquina de estado / correlação
     // ------------------------------------------------------------------ //
     property int _nextId: 0
+    property int _tempSeq: 0
     readonly property var _pending: ({})
     readonly property var _queue: []
     property int _pendingCount: 0
@@ -484,6 +485,8 @@ Singleton {
             root._onMessageUpdated(data);
         } else if (name === "receipt.updated") {
             root._onReceiptUpdated(data);
+        } else if (name === "media.upload") {
+            root._onMediaUpload(data);
         } else if (name === "chat.updated") {
             root._upsertChat(data.chat || data, true);
         }
@@ -742,7 +745,7 @@ Singleton {
             "size": Number(md.size || 0),
             "width": Number(md.width || 0),
             "height": Number(md.height || 0),
-            "downloaded": md.downloaded === true,
+            "downloaded": md.downloaded === true || Boolean(md.path),
             "thumb": String(md.thumb || ""),
             "path": String(md.path || ""),
             "duration": Number(md.duration || 0)
@@ -830,7 +833,10 @@ Singleton {
             "deleted": m.deleted === true,
             "status": String(m.status || ""),
             "media": root._mediaObject(m),
-            "reactions": JSON.stringify(root._reactionsArray(m.reactions))
+            "reactions": JSON.stringify(root._reactionsArray(m.reactions)),
+            // Envio otimista de mídia: preview local + estado de upload.
+            "localPath": String(m.localPath || ""),
+            "upload": m.upload || null
         };
     }
 
@@ -1085,6 +1091,205 @@ Singleton {
             if (!err && media && media.path)
                 root.openPath(media.path);
         });
+    }
+
+    // ------------------------------------------------------------------ //
+    // Envio de mídia (1 arquivo por vez)
+    // ------------------------------------------------------------------ //
+    readonly property int mediaSizeLimit: 100 * 1024 * 1024
+
+    function _basename(path) {
+        const p = String(path || "");
+        const i = p.lastIndexOf("/");
+        return i >= 0 ? p.substring(i + 1) : p;
+    }
+
+    // Índice da bolha otimista pelo temp_id do upload.
+    function _uploadIndex(tempId) {
+        const t = String(tempId || "");
+        if (!t.length)
+            return -1;
+        for (let i = 0; i < messagesModel.count; i++) {
+            const up = messagesModel.get(i).upload;
+            if (up && String(up.tempId || "") === t)
+                return i;
+        }
+        return -1;
+    }
+
+    // Cria a bolha otimista e dispara media.send. Retorna false se inválido.
+    function sendMedia(path, kind, mime, size, caption) {
+        const jid = root.currentChat;
+        const p = String(path || "");
+        const k = String(kind || "");
+        const n = Number(size || 0);
+        const cap = String(caption || "");
+        if (!jid.length || !p.length)
+            return false;
+        if (n > root.mediaSizeLimit) {
+            root.lastError = "Arquivo maior que 100 MB";
+            return false;
+        }
+        if (k !== "image" && k !== "video" && k !== "audio" && k !== "document") {
+            root.lastError = "Tipo de arquivo não suportado";
+            return false;
+        }
+
+        const replyId = root.replyToId;
+        if (replyId.length)
+            root.clearReply();
+
+        const tempId = "tmp-" + (++root._tempSeq);
+        const upload = {
+            "state": "sending",
+            "pct": 0,
+            "tempId": tempId,
+            "name": root._basename(p),
+            "size": n,
+            "kind": k,
+            "mime": String(mime || ""),
+            "caption": cap,
+            "replyTo": replyId,
+            "path": p,
+            "error": ""
+        };
+        const media = {
+            "kind": k,
+            "mime": String(mime || ""),
+            "size": n,
+            "width": 0,
+            "height": 0,
+            "downloaded": false,
+            "thumb": "",
+            "path": "",
+            "duration": 0
+        };
+        messagesModel.append(root._messageRow({
+            "id": tempId,
+            "chat": jid,
+            "sender": root.accountJid,
+            "fromMe": true,
+            "timestamp": String(Date.now()),
+            "type": k,
+            "text": cap,
+            "status": "sending",
+            "media": media,
+            "localPath": p,
+            "upload": upload
+        }));
+
+        root._send("media.send", {
+            "chat": jid,
+            "path": p,
+            "caption": cap.length ? cap : null,
+            "reply_to": replyId.length ? replyId : null
+        }, function (res, err) {
+            if (err || !res) {
+                root._markUploadFailed(tempId, err);
+                return;
+            }
+            root._reconcileUpload(tempId, jid, res);
+        });
+        return true;
+    }
+
+    function _markUploadFailed(tempId, err) {
+        const idx = root._uploadIndex(tempId);
+        if (idx < 0)
+            return;
+        const row = messagesModel.get(idx);
+        const up = Object.assign({}, row.upload);
+        up.state = "failed";
+        up.pct = 0;
+        up.error = root._errorMessage(err) || "send_failed";
+        messagesModel.setProperty(idx, "upload", up);
+        messagesModel.setProperty(idx, "status", "failed");
+        root.lastError = up.error;
+    }
+
+    function _reconcileUpload(tempId, jid, res) {
+        const realId = String(res.id || "");
+        const tmpIdx = root._uploadIndex(tempId);
+        const realIdx = realId.length ? root._messageIndex(realId) : -1;
+        const media = root._mediaObject({
+            "media": res
+        });
+        const row = root._messageRow({
+            "id": realId.length ? realId : tempId,
+            "chat": jid,
+            "sender": root.accountJid,
+            "fromMe": true,
+            "timestamp": String(Date.now()),
+            "type": String(res.kind || "document"),
+            "text": String(res.caption || ""),
+            "status": "sent",
+            "media": res
+        });
+        if (realIdx >= 0) {
+            // O eco (message.received) chegou antes: descarta a bolha otimista e
+            // completa a mensagem real com a mídia do cache. Recalcula o índice
+            // real após a remoção (ele pode deslocar).
+            if (tmpIdx >= 0)
+                messagesModel.remove(tmpIdx);
+            const ri = root._messageIndex(realId);
+            if (ri >= 0) {
+                messagesModel.setProperty(ri, "media", media);
+                messagesModel.setProperty(ri, "status", "sent");
+            }
+        } else if (tmpIdx >= 0) {
+            messagesModel.set(tmpIdx, row);
+        } else {
+            messagesModel.append(row);
+        }
+        root._bumpChatPreview(jid, root._previewFor({
+            "type": String(res.kind || "document"),
+            "text": String(res.caption || "")
+        }), String(Date.now()), false);
+        root.messageAppended(jid);
+    }
+
+    function retryUpload(tempId) {
+        const idx = root._uploadIndex(tempId);
+        if (idx < 0)
+            return;
+        const row = messagesModel.get(idx);
+        const jid = String(row.chat || root.currentChat);
+        const up = Object.assign({}, row.upload);
+        up.state = "sending";
+        up.pct = 0;
+        up.error = "";
+        messagesModel.setProperty(idx, "upload", up);
+        messagesModel.setProperty(idx, "status", "sending");
+        root._send("media.send", {
+            "chat": jid,
+            "path": up.path,
+            "caption": String(up.caption || "").length ? up.caption : null,
+            "reply_to": String(up.replyTo || "").length ? up.replyTo : null
+        }, function (res, err) {
+            if (err || !res) {
+                root._markUploadFailed(tempId, err);
+                return;
+            }
+            root._reconcileUpload(tempId, jid, res);
+        });
+    }
+
+    function discardUpload(tempId) {
+        const idx = root._uploadIndex(tempId);
+        if (idx >= 0)
+            messagesModel.remove(idx);
+    }
+
+    function _onMediaUpload(data) {
+        const tempId = String(data.temp_id || "");
+        const idx = root._uploadIndex(tempId);
+        if (idx < 0)
+            return;
+        const row = messagesModel.get(idx);
+        const up = Object.assign({}, row.upload);
+        up.pct = Math.max(0, Math.min(100, Number(data.pct || 0)));
+        up.state = "sending";
+        messagesModel.setProperty(idx, "upload", up);
     }
 
     function send(text) {

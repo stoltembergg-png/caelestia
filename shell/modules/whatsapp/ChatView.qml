@@ -2,8 +2,8 @@
 //
 // O modelo (WhatsAppClient.messages) já chega em ordem cronológica (antigo ->
 // recente). Rolamos para o fim a cada mensagem nova; o read é disparado pelo
-// serviço ao abrir e ao receber. Um menu de contexto por clique direito/long
-// press permite responder e reagir.
+// serviço ao abrir e ao receber. Aceita arquivo solto (DropArea) sobre a
+// conversa e um menu de contexto para responder/reagir.
 
 pragma ComponentBehavior: Bound
 
@@ -56,6 +56,8 @@ Item {
                         required property string status
                         required property var media
                         required property string reactions
+                        required property string localPath
+                        required property var upload
 
                         width: ListView.view ? ListView.view.width : 0
                         height: bubble.implicitHeight
@@ -80,6 +82,8 @@ Item {
                             status: wrapper.status
                             media: wrapper.media
                             reactions: wrapper.reactions
+                            localPath: wrapper.localPath
+                            upload: wrapper.upload
 
                             onContextRequested: contextMenu.openFor(bubble, wrapper.messageId, wrapper.chat, wrapper.fromMe)
                         }
@@ -111,7 +115,31 @@ Item {
         }
 
         MessageComposer {
+            id: composer
+
             Layout.fillWidth: true
+        }
+    }
+
+    // Destaque de arrastar-e-soltar
+    StyledRect {
+        anchors.fill: parent
+        visible: dropArea.containsDrag
+        radius: Tokens.rounding.large
+        color: Qt.alpha(Colours.palette.m3primary, 0.06)
+        border.width: 1
+        border.color: Colours.palette.m3primary
+        z: 50
+    }
+
+    DropArea {
+        id: dropArea
+
+        anchors.fill: parent
+        keys: ["text/uri-list"]
+        onDropped: drop => {
+            if (drop.hasUrls && drop.urls.length > 0)
+                composer.stageUrl(drop.urls[0]);
         }
     }
 

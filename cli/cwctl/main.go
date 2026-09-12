@@ -56,6 +56,8 @@ func run(args []string) error {
 		return cmdMessages(socket, cmdArgs)
 	case "send":
 		return cmdSend(socket, cmdArgs)
+	case "send-media":
+		return cmdSendMedia(socket, cmdArgs)
 	case "avatar":
 		return cmdAvatar(socket, cmdArgs)
 	case "media":
@@ -111,6 +113,8 @@ Comandos:
   chats [--limit N]          lista de conversas
   messages <jid> [--limit N] histórico recente de uma conversa
   send <jid> <texto>         envia uma mensagem de texto
+  send-media <jid> <caminho> [--caption "..."] [--reply <id>]
+                             envia um arquivo (imagem/vídeo/áudio/documento)
   avatar <jid>               baixa o avatar e imprime o caminho
   media <jid> <id>           baixa a mídia de uma mensagem e imprime o caminho
   login [--timeout 2m]       pareia via QR (imprime o QR no terminal)
@@ -304,6 +308,110 @@ func cmdSend(socket string, args []string) error {
 		return err
 	}
 	fmt.Printf("sent id=%s timestamp=%s\n", res.ID, res.Timestamp)
+	return nil
+}
+
+// splitSendMediaArgs pulls --caption/--reply (with either `--flag value` or
+// `--flag=value`) out of args wherever they appear, returning the remaining
+// positional arguments. This keeps the documented `send-media <jid> <path>
+// [flags]` order working even though Go's flag package stops at the first
+// positional argument.
+func splitSendMediaArgs(args []string) (caption, reply string, rest []string, err error) {
+	rest = make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--caption" || a == "-caption":
+			if i+1 >= len(args) {
+				return "", "", nil, errors.New("--caption precisa de um valor")
+			}
+			i++
+			caption = args[i]
+		case strings.HasPrefix(a, "--caption="):
+			caption = strings.TrimPrefix(a, "--caption=")
+		case a == "--reply" || a == "-reply":
+			if i+1 >= len(args) {
+				return "", "", nil, errors.New("--reply precisa de um valor")
+			}
+			i++
+			reply = args[i]
+		case strings.HasPrefix(a, "--reply="):
+			reply = strings.TrimPrefix(a, "--reply=")
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return caption, reply, rest, nil
+}
+
+// cmdSendMedia uploads a local file as a WhatsApp media message. While the
+// request is in flight it prints media.upload progress to stderr and, on
+// success, the message id plus the cache path/thumbnail.
+func cmdSendMedia(socket string, args []string) error {
+	caption, reply, rest, err := splitSendMediaArgs(args)
+	if err != nil {
+		return err
+	}
+	if len(rest) < 2 {
+		return errors.New("usage: cwctl send-media <jid> <caminho> [--caption \"...\"] [--reply <id>]")
+	}
+	jid := rest[0]
+	path, err := filepath.Abs(rest[1])
+	if err != nil {
+		return err
+	}
+
+	c, err := dial(socket)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	params := map[string]any{"chat": jid, "path": path}
+	if caption != "" {
+		params["caption"] = caption
+	}
+	if reply != "" {
+		params["reply_to"] = reply
+	}
+
+	var outer struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			ID      string  `json:"id"`
+			Kind    string  `json:"kind"`
+			Mime    string  `json:"mime"`
+			Size    int64   `json:"size"`
+			Width   int     `json:"width"`
+			Height  int     `json:"height"`
+			Path    string  `json:"path"`
+			Thumb   *string `json:"thumb"`
+			Caption string  `json:"caption"`
+		} `json:"result"`
+	}
+	onEvent := func(ev event) {
+		if ev.Name != "media.upload" {
+			return
+		}
+		var d struct {
+			Pct int `json:"pct"`
+		}
+		if json.Unmarshal(ev.Data, &d) == nil {
+			fmt.Fprintf(os.Stderr, "\rupload %d%%", d.Pct)
+		}
+	}
+	if err := c.CallWithProgress("media.send", params, 15*time.Minute, &outer, onEvent); err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr)
+
+	res := outer.Result
+	thumb := "-"
+	if res.Thumb != nil {
+		thumb = *res.Thumb
+	}
+	fmt.Printf("id=%s kind=%s mime=%s size=%d %dx%d path=%s thumb=%s caption=%q\n",
+		res.ID, res.Kind, res.Mime, res.Size, res.Width, res.Height, res.Path, thumb, res.Caption)
 	return nil
 }
 
@@ -577,6 +685,16 @@ func (c *client) readLoop() {
 // Call sends a request and waits for its response, honoring timeout. out may
 // be nil; otherwise the result JSON is unmarshaled into it.
 func (c *client) Call(method string, params any, timeout time.Duration, out any) error {
+	return c.call(method, params, timeout, out, nil)
+}
+
+// CallWithProgress is Call with an optional callback invoked for every server
+// event that arrives while the request is in flight (e.g. media.upload).
+func (c *client) CallWithProgress(method string, params any, timeout time.Duration, out any, onEvent func(event)) error {
+	return c.call(method, params, timeout, out, onEvent)
+}
+
+func (c *client) call(method string, params any, timeout time.Duration, out any, onEvent func(event)) error {
 	c.mu.Lock()
 	c.nextID++
 	id := c.nextID
@@ -606,25 +724,31 @@ func (c *client) Call(method string, params any, timeout time.Duration, out any)
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
-	select {
-	case resp, ok := <-ch:
-		if !ok {
+	for {
+		select {
+		case resp, ok := <-ch:
+			if !ok {
+				return errors.New("connection closed")
+			}
+			if resp.err != nil {
+				return resp.err
+			}
+			if out == nil || len(resp.result) == 0 {
+				return nil
+			}
+			if err := json.Unmarshal(resp.result, out); err != nil {
+				return fmt.Errorf("decode result: %w", err)
+			}
+			return nil
+		case ev := <-c.events:
+			if onEvent != nil {
+				onEvent(ev)
+			}
+		case <-timer.C:
+			return fmt.Errorf("request %q timed out after %s", method, timeout)
+		case <-c.closed:
 			return errors.New("connection closed")
 		}
-		if resp.err != nil {
-			return resp.err
-		}
-		if out == nil || len(resp.result) == 0 {
-			return nil
-		}
-		if err := json.Unmarshal(resp.result, out); err != nil {
-			return fmt.Errorf("decode result: %w", err)
-		}
-		return nil
-	case <-timer.C:
-		return fmt.Errorf("request %q timed out after %s", method, timeout)
-	case <-c.closed:
-		return errors.New("connection closed")
 	}
 }
 

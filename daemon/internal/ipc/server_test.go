@@ -120,6 +120,40 @@ func TestPingRoundTrip(t *testing.T) {
 	}
 }
 
+// TestHandlerReceivesRequestID verifies the server attaches the request id to
+// the handler context so long-running methods can correlate progress events.
+func TestHandlerReceivesRequestID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "reqid.sock")
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := NewServer(path, logger)
+	seen := make(chan uint64, 1)
+	srv.Register("whoami", func(ctx context.Context, _ *Client, _ json.RawMessage) (any, *Error) {
+		seen <- RequestIDFromContext(ctx)
+		return map[string]any{"echo": RequestIDFromContext(ctx)}, nil
+	})
+	if err := srv.Start(); err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+
+	conn := dial(t, path)
+	r := bufio.NewReader(conn)
+	sendLine(t, conn, `{"id":42,"method":"whoami"}`)
+	resp := readJSONLine(t, r)
+	if got := responseID(t, resp); got != 42 {
+		t.Fatalf("response id = %d, want 42", got)
+	}
+	select {
+	case got := <-seen:
+		if got != 42 {
+			t.Fatalf("handler request id = %d, want 42", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handler was not called")
+	}
+}
+
 func TestMethodNotFound(t *testing.T) {
 	_, path := newTestServer(t)
 	conn := dial(t, path)

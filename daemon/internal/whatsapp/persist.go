@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"strconv"
 	"sync"
@@ -35,6 +36,9 @@ type fullClient interface {
 	// DownloadToFile streams a media attachment to file so the bytes never live
 	// in memory nor travel over IPC.
 	DownloadToFile(ctx context.Context, msg whatsmeow.DownloadableMessage, file whatsmeow.File) error
+	// UploadReader streams plaintext to WhatsApp for an outbound media message.
+	// tempFile is the scratch file the encryption pass uses; the caller owns it.
+	UploadReader(ctx context.Context, plaintext io.Reader, tempFile io.ReadWriteSeeker, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error)
 }
 
 // fullClient returns the current client as a fullClient, or nil when the

@@ -136,11 +136,16 @@ Estáveis e parte do contrato — clientes podem (e devem) ramificar por `code`.
 | `send_failed`        | A operação de rede com o WhatsApp falhou. | `message.send` com a conexão caída; `message.read` recusado; `message.react` recusado |
 | `no_media`           | A mensagem existe mas não tem mídia baixável. | `media.download` de uma mensagem de texto, ou de uma linha `cae_media` sem o proto de download |
 | `download_failed`    | O download dos bytes (mídia/avatar) falhou. | rede/timeout durante `media.download`/`avatars.download` |
+| `file_not_found`     | O caminho de `media.send` não existe. | `path` apontando para um arquivo removido |
+| `file_too_large`     | O arquivo de `media.send` passa de 100 MB. | upload de vídeo grande |
+| `unsupported_type`   | O arquivo de `media.send` não é um tipo suportado (imagem/vídeo/áudio/documento). | `.bmp`, `.webm`, `.mov` |
+| `upload_failed`      | O upload dos bytes para o WhatsApp falhou. | rede/timeout durante `media.send` |
 | `no_login_active`    | `auth.cancel` chamado sem login em andamento. | cancelar após o pareamento concluir/expirar |
 
 `parse_error`, `invalid_request` e `method_not_found` são emitidos pela camada
 de protocolo; `not_paired`, `not_found`, `send_failed`, `no_media`,
-`download_failed` e `no_login_active` são específicos dos métodos de domínio e
+`download_failed`, `file_not_found`, `file_too_large`, `unsupported_type`,
+`upload_failed` e `no_login_active` são específicos dos métodos de domínio e
 também são estáveis.
 
 O daemon **nunca** derruba o processo por payload inválido. Existe ainda um
@@ -657,6 +662,80 @@ Response:
 O mesmo resultado alimenta o backfill preguiçoso de `chats.list`/`chat.open`
 (que nunca bloqueia) e é anunciado por `chat.updated {jid, avatar}`.
 
+### `media.send` (fase de envio de mídia)
+
+Envia um arquivo local como imagem, vídeo, nota de voz ou documento. O arquivo
+é lido em streaming (`UploadReader`) e **nunca** trafega em RAM nem pelo IPC; o
+daemon faz upload, monta a mensagem correspondente e envia ao chat.
+
+Detecção do tipo (sniff por conteúdo via `http.DetectContentType` + extensão):
+`jpg/jpeg/png/gif/webp` → `image`; `mp4` → `video`; `ogg/opus` → `audio` (PTT);
+qualquer outro arquivo regular → `document` (com `fileName`). `path` precisa ser
+**absoluto** e um arquivo regular de até **100 MB**. Erros: `not_paired`,
+`invalid_request` (sem `chat`/`path`, caminho relativo ou não-arquivo/diretório,
+arquivo vazio), `file_not_found`, `file_too_large`, `unsupported_type`
+(ex.: `.bmp`, `.webm`, `.mov`), `upload_failed`, `send_failed`.
+
+Request:
+
+```json
+{
+  "id": 20,
+  "method": "media.send",
+  "params": {
+    "chat": "5511999999999@s.whatsapp.net",
+    "path": "/home/user/foto.png",
+    "caption": "olha isso",
+    "reply_to": "3EB0..."
+  }
+}
+```
+
+`caption` e `reply_to` são opcionais (`null`/ausente desliga). O `reply_to` é
+aplicado via `ContextInfo` com o `Participant` do remetente citado, quando
+conhecido.
+
+Enquanto o upload corre, o daemon emite para todos os clientes:
+
+```json
+{"event":"media.upload","data":{"temp_id":"20","chat":"5511999999999@s.whatsapp.net","pct":45}}
+```
+
+`temp_id` é o `id` do request que originou o envio (para o frontend reconciliar
+a barra de progresso); `pct` vai de `0` a `100` com throttle de ~5%. Como o
+`UploadReader` do whatsmeow não expõe callback, o progresso reflete os bytes de
+plaintext lidos na passagem de criptografia.
+
+Response:
+
+```json
+{
+  "id": 20,
+  "result": {
+    "ok": true,
+    "result": {
+      "id": "3EB0...",
+      "kind": "image",
+      "mime": "image/png",
+      "size": 140,
+      "width": 64,
+      "height": 64,
+      "path": "/home/user/.local/share/caelestia-whatsapp/cache/images/<sha256>.png",
+      "thumb": "/home/user/.local/share/caelestia-whatsapp/thumbnails/<sha256>.jpg",
+      "caption": "olha isso"
+    }
+  }
+}
+```
+
+`width`/`height` só são preenchidos para imagens (0 nos demais tipos) e `thumb`
+é `null` quando não há thumbnail gerada. Depois do envio, o daemon **copia** o
+arquivo para `cache/{images,videos,audio,documents}/<sha256>.<ext>` (arquivo
+`0600`), gera a thumbnail de imagens, persiste a mensagem e `cae_media` com o
+arquivo já disponível (`downloaded`) e emite `message.received`/`chat.updated`
+do próprio envio. O eco do servidor é deduplicado pelo `id`, então o frontend
+pode reconciliar pela resposta sem mensagem duplicada.
+
 ---
 
 ## 7. Métodos e eventos — status
@@ -667,13 +746,13 @@ tabela congela os nomes para o contrato não mudar quando forem implementados.
 Já implementados: `auth.start|status|cancel|logout` e, na fase 2.4,
 `chats.list`, `chat.open`, `chat.messages`, `message.send`, `message.reply`,
 `message.read` e `contacts.search` (ver §6). A fase de mídia/avatares
-implementou `message.react`, `media.download` e `avatars.download` (ver §6).
+implementou `message.react`, `media.download` e `avatars.download`; a fase de
+envio de mídia implementou `media.send` (ver §6).
 
 Métodos restantes (de `ARQUITETURA.md` §3.3):
 
 | Método | Descrição |
 |---|---|
-| `media.send` | envia mídia a partir de um caminho local |
 | `presence.typing` | envia/atualiza indicador de digitação |
 | `presence.available` | presença do usuário |
 
@@ -729,7 +808,22 @@ não emite: é backfill e não mensagem em tempo real.
 > Apagar uma mensagem é sinalizado por `message.updated {deleted:true}`; não há
 > um evento `message.deleted` separado (nome unificado no contrato).
 
-### 7.3 Planejados (fase 2.5+)
+### 7.3 Upload de mídia (fase de envio de mídia)
+
+| Evento | `data` | Quando |
+|---|---|---|
+| `media.upload` | `{temp_id, chat, pct}` | progresso de um `media.send` em andamento; `temp_id` é o `id` do request e `pct` vai de 0 a 100 (~5% de throttle) |
+
+Diferente dos eventos de §7.2, este é emitido **diretamente pelo handler**
+`media.send` (não pelo `Persister`) enquanto o upload roda, e é transmitido a
+todos os clientes. O frontend casa o `temp_id` com o request pendente para
+desenhar a barra de progresso.
+
+```json
+{"event":"media.upload","data":{"temp_id":"20","chat":"5511999999999@s.whatsapp.net","pct":100}}
+```
+
+### 7.4 Planejados (fase 2.5+)
 
 | Evento | Descrição |
 |---|---|
@@ -787,6 +881,7 @@ cwctl --socket /tmp/cw.sock messages '5511999999999@s.whatsapp.net' --limit 50
 cwctl --socket /tmp/cw.sock send '5511999999999@s.whatsapp.net' 'olá!'
 cwctl --socket /tmp/cw.sock avatar '5511999999999@s.whatsapp.net'
 cwctl --socket /tmp/cw.sock media '5511999999999@s.whatsapp.net' '3EB0IMG...'
+cwctl --socket /tmp/cw.sock send-media '5511999999999@s.whatsapp.net' /home/user/foto.png --caption 'olha isso'
 ```
 
 Exemplo de cliente Python (UDS, usado no smoke manual):

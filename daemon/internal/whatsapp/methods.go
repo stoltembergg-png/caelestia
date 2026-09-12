@@ -35,6 +35,14 @@ const (
 	CodeNoMedia = "no_media"
 	// CodeDownloadFailed means fetching media/avatar bytes failed.
 	CodeDownloadFailed = "download_failed"
+	// CodeFileNotFound means the media.send source path does not exist.
+	CodeFileNotFound = "file_not_found"
+	// CodeFileTooLarge means the media.send source exceeds the size limit.
+	CodeFileTooLarge = "file_too_large"
+	// CodeUnsupportedType means the media.send source is not a supported file.
+	CodeUnsupportedType = "unsupported_type"
+	// CodeUploadFailed means uploading the media to WhatsApp failed.
+	CodeUploadFailed = "upload_failed"
 )
 
 // sendTimeout bounds a single outbound WhatsApp operation.
@@ -42,6 +50,13 @@ const sendTimeout = 30 * time.Second
 
 // mediaDownloadTimeout bounds a single media download (streaming to disk).
 const mediaDownloadTimeout = 2 * time.Minute
+
+// mediaUploadTimeout bounds the upload + encryption pass of one outbound media
+// file. Large documents can take a while on a slow link.
+const mediaUploadTimeout = 10 * time.Minute
+
+// maxMediaSendBytes is the hard limit for an outbound media file (100 MB).
+const maxMediaSendBytes = 100 << 20
 
 // Methods implements the chats/messages/contacts/media/avatar IPC methods on
 // top of the repository and the whatsmeow service. It is registered by main.go.
@@ -88,6 +103,7 @@ func (m *Methods) Register(s *ipc.Server) {
 	s.Register("contacts.search", wrap(m.ContactsSearch))
 	s.Register("avatars.download", wrap(m.AvatarsDownload))
 	s.Register("media.download", wrap(m.MediaDownload))
+	s.Register("media.send", wrap(m.MediaSend))
 }
 
 // methodFunc is the testable shape of a handler (without the *ipc.Client).

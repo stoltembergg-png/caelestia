@@ -64,6 +64,9 @@ const (
 	EventMessageUpdated  = "message.updated"
 	EventReceiptUpdated  = "receipt.updated"
 	EventChatUpdated     = "chat.updated"
+	// EventMediaUpload reports outbound media upload progress. It carries
+	// temp_id (the request id), chat and pct (0..100).
+	EventMediaUpload = "media.upload"
 )
 
 // Event is an internal, already-redacted event ready to be broadcast over IPC.

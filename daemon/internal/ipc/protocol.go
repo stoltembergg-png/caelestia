@@ -21,6 +21,7 @@ package ipc
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -179,4 +180,21 @@ func StringID(id uint64) string {
 // as a decimal string for the same reason as StringID.
 func StringTimestamp(ts int64) string {
 	return strconv.FormatInt(ts, 10)
+}
+
+// requestIDKey is the private context key carrying the request id.
+type requestIDKey struct{}
+
+// WithRequestID returns a context carrying the id of the request being
+// handled. The server attaches it before invoking a handler so a long-running
+// method (e.g. media.send) can correlate progress events with the request.
+func WithRequestID(ctx context.Context, id uint64) context.Context {
+	return context.WithValue(ctx, requestIDKey{}, id)
+}
+
+// RequestIDFromContext returns the request id attached by WithRequestID, or 0
+// when none is present.
+func RequestIDFromContext(ctx context.Context) uint64 {
+	id, _ := ctx.Value(requestIDKey{}).(uint64)
+	return id
 }

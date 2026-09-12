@@ -395,7 +395,7 @@ func (s *Server) invoke(c *Client, h Handler, req *Request) (out invokeResult) {
 			out = invokeResult{err: &Error{Code: ErrorInternal, Message: "internal error"}, panicked: true}
 		}
 	}()
-	value, err := h(s.ctx, c, req.Params)
+	value, err := h(WithRequestID(s.ctx, req.ID), c, req.Params)
 	if err != nil {
 		return invokeResult{err: err}
 	}
