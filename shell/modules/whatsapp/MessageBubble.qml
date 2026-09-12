@@ -33,16 +33,20 @@ Item {
     property string localPath: ""
     property var upload: null
     property string reactions: ""
+    property bool compact: false
 
     signal contextRequested()
 
     readonly property var _reactions: WhatsAppClient.reactionsOf(root.reactions)
+    readonly property real _hpad: root.compact ? Tokens.padding.small : Tokens.padding.medium
+    readonly property real _vpad: root.compact ? Tokens.spacing.extraSmall : Tokens.padding.small
+    readonly property real _spacing: root.compact ? 2 : Tokens.spacing.extraSmall
 
     readonly property bool isText: root.type === "text" || root.type === "protocol"
     readonly property bool isMedia: root.type === "image" || root.type === "video" || root.type === "audio" || root.type === "document" || root.type === "sticker"
     readonly property bool isOtherType: !root.isText && !root.isMedia
     readonly property bool showCaption: (root.type === "image" || root.type === "video" || root.type === "sticker") && root.text.length > 0
-    readonly property real maxWidth: Math.max(160, root.width * 0.8)
+    readonly property real maxWidth: Math.max(160, root.width * (root.compact ? 0.86 : 0.8))
 
     function timeText(): string {
         if (!root.timestamp)
@@ -130,9 +134,9 @@ Item {
 
         anchors.right: root.fromMe ? parent.right : undefined
         anchors.left: root.fromMe ? undefined : parent.left
-        implicitWidth: Math.max(content.implicitWidth, statusRow.implicitWidth) + Tokens.padding.medium * 2
+        implicitWidth: Math.max(content.implicitWidth, statusRow.implicitWidth) + root._hpad * 2
         width: Math.min(root.maxWidth, implicitWidth)
-        implicitHeight: content.implicitHeight + Tokens.padding.small * 2
+        implicitHeight: content.implicitHeight + root._vpad * 2
         radius: Tokens.rounding.large
         bottomRightRadius: root.fromMe ? Tokens.rounding.extraSmall : Tokens.rounding.large
         bottomLeftRadius: root.fromMe ? Tokens.rounding.large : Tokens.rounding.extraSmall
@@ -141,10 +145,10 @@ Item {
         ColumnLayout {
             id: content
 
-            x: Tokens.padding.medium
-            y: Tokens.padding.small
-            width: bubble.width - Tokens.padding.medium * 2
-            spacing: Tokens.spacing.extraSmall
+            x: root._hpad
+            y: root._vpad
+            width: bubble.width - root._hpad * 2
+            spacing: root._spacing
 
             // Citação
             StyledClippingRect {
@@ -207,6 +211,7 @@ Item {
                 localPath: root.localPath
                 upload: root.upload
                 fromMe: root.fromMe
+                compact: root.compact
             }
 
             // Tipos simples (localização/contato)

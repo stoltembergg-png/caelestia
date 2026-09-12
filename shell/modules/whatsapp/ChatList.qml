@@ -16,6 +16,8 @@ import qs.extras.whatsapp
 Item {
     id: root
 
+    readonly property bool compact: WhatsAppSettings.getBool("compactMode", false)
+
     VerticalFadeListView {
         id: list
 
@@ -40,7 +42,7 @@ Item {
                 required property string avatar
 
                 width: ListView.view ? ListView.view.width : 0
-                height: Tokens.padding.extraLarge * 3
+                height: root.compact ? 60 : Tokens.padding.extraLarge * 3
 
                 readonly property bool selected: WhatsAppClient.currentChat === row.jid
                 readonly property real badgeWidth: row.unread > 0 ? Math.max(20, badgeLabel.implicitWidth + Tokens.spacing.small) : 0
@@ -93,9 +95,9 @@ Item {
                     id: avatar
 
                     anchors.left: parent.left
-                    anchors.leftMargin: Tokens.padding.medium
+                    anchors.leftMargin: root.compact ? Tokens.padding.small : Tokens.padding.medium
                     anchors.verticalCenter: parent.verticalCenter
-                    size: 44
+                    size: root.compact ? 34 : 44
                     name: row.name
                     jid: row.jid
                     avatar: row.avatar
@@ -144,16 +146,16 @@ Item {
 
                 Column {
                     anchors.left: avatar.right
-                    anchors.leftMargin: Tokens.padding.medium
+                    anchors.leftMargin: root.compact ? Tokens.spacing.small : Tokens.padding.medium
                     anchors.right: meta.left
                     anchors.rightMargin: Tokens.spacing.small
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 2
+                    spacing: root.compact ? 0 : 2
 
                     StyledText {
                         width: parent.width
                         text: row.name
-                        font: row.unread > 0 ? Tokens.font.body.builders.medium.weight(Font.DemiBold).build() : Tokens.font.body.medium
+                        font: row.unread > 0 ? Tokens.font.body.builders.medium.weight(Font.DemiBold).build() : (root.compact ? Tokens.font.body.small : Tokens.font.body.medium)
                         elide: Text.ElideRight
                         maximumLineCount: 1
                     }
@@ -162,7 +164,7 @@ Item {
                         width: parent.width
                         text: row.lastMessage.length > 0 ? row.lastMessage : "—"
                         color: Colours.palette.m3onSurfaceVariant
-                        font: Tokens.font.body.small
+                        font: root.compact ? Tokens.font.label.small : Tokens.font.body.small
                         elide: Text.ElideRight
                         maximumLineCount: 1
                     }

@@ -1,9 +1,8 @@
-// MessageComposer — anexo (1 arquivo) + faixa de resposta + campo + enviar.
+// MessageComposer — anexo (1 arquivo) + faixa de resposta + caixa de texto.
 //
-// Anexo: botão de clipe usa `zenity --file-selection` (stdout capturado por
-// Process); se o zenity não existir, cai para QtQuick.Dialogs.FileDialog.
-// Preview/confirmacão acima do input (thumb/nome/tamanho + legenda + X).
-// Sem anexo, o comportamento de texto/reply permanece.
+// A caixa é um "pill" nativo (StyledRect + TextFieldBase + placeholder próprio,
+// no estilo do SearchBar do shell). Anexo via zenity (fallback FileDialog),
+// preview acima e envio por Enter/botão (texto ou mídia com legenda).
 
 pragma ComponentBehavior: Bound
 
@@ -20,7 +19,10 @@ import qs.extras.whatsapp
 ColumnLayout {
     id: root
 
-    spacing: Tokens.spacing.extraSmall
+    readonly property bool compact: WhatsAppSettings.getBool("compactMode", false)
+    readonly property real _pad: root.compact ? Tokens.padding.extraSmall : Tokens.padding.small
+
+    spacing: root.compact ? Tokens.spacing.extraSmall : Tokens.spacing.small
 
     // ------------------------------------------------------------------ //
     // Estado do anexo
@@ -93,7 +95,6 @@ ColumnLayout {
             fallbackDialog.open();
     }
 
-    // Ponto único de entrada (picker, drop e FileDialog).
     function stageUrl(u): void {
         root.stagePath(root._urlToPath(u));
     }
@@ -132,7 +133,7 @@ ColumnLayout {
         root.stagedMime = mime;
         root.stagedSize = size;
         root.stagedError = "";
-        Qt.callLater(() => captionField.forceActiveFocus());
+        Qt.callLater(() => input.forceActiveFocus());
     }
 
     function cancelStaged(): void {
@@ -142,12 +143,12 @@ ColumnLayout {
         root.stagedMime = "";
         root.stagedSize = 0;
         root.stagedError = "";
-        captionField.text = "";
+        input.text = "";
     }
 
     function submit(): void {
         if (root.staged) {
-            const ok = WhatsAppClient.sendMedia(root.stagedPath, root.stagedKind, root.stagedMime, root.stagedSize, captionField.text);
+            const ok = WhatsAppClient.sendMedia(root.stagedPath, root.stagedKind, root.stagedMime, root.stagedSize, input.text);
             if (ok)
                 root.cancelStaged();
             else
@@ -186,7 +187,6 @@ ColumnLayout {
             }
         }
         // qmllint disable signal-handler-parameters
-        // O enum QProcess::ExitStatus não está no qmltypes; é válido em runtime.
         onExited: code => {
             if (code === 127)
                 fallbackDialog.open();
@@ -276,131 +276,155 @@ ColumnLayout {
     StyledClippingRect {
         Layout.fillWidth: true
         visible: root.staged || root.stagedError.length > 0
-        implicitHeight: previewCol.implicitHeight + Tokens.spacing.medium * 2
+        implicitHeight: previewCol.implicitHeight + Tokens.spacing.small * 2
         radius: Tokens.rounding.small
         color: Colours.tPalette.m3surfaceContainer
 
-        ColumnLayout {
+        RowLayout {
             id: previewCol
 
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            anchors.leftMargin: Tokens.spacing.medium
-            anchors.rightMargin: Tokens.spacing.small
-            spacing: Tokens.spacing.extraSmall
+            anchors.leftMargin: Tokens.spacing.small
+            anchors.rightMargin: Tokens.spacing.extraSmall
+            spacing: Tokens.spacing.small
 
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: Tokens.spacing.small
+            StyledClippingRect {
+                Layout.alignment: Qt.AlignVCenter
+                visible: root.staged
+                implicitWidth: 36
+                implicitHeight: 36
+                radius: Tokens.rounding.small
+                color: Colours.tPalette.m3surfaceContainerHighest
 
-                StyledClippingRect {
-                    Layout.alignment: Qt.AlignVCenter
-                    visible: root.staged
-                    implicitWidth: 40
-                    implicitHeight: 40
-                    radius: Tokens.rounding.small
-                    color: Colours.tPalette.m3surfaceContainerHighest
-
-                    Image {
-                        anchors.fill: parent
-                        visible: root.stagedKind === "image"
-                        source: root.stagedPath.length ? "file://" + root.stagedPath : ""
-                        fillMode: Image.PreserveAspectCrop
-                        asynchronous: true
-                    }
-
-                    MaterialIcon {
-                        anchors.centerIn: parent
-                        visible: root.stagedKind !== "image"
-                        text: root._kindIcon(root.stagedKind)
-                        color: Colours.palette.m3onSurfaceVariant
-                        fontStyle: Tokens.font.icon.medium
-                    }
+                Image {
+                    anchors.fill: parent
+                    visible: root.stagedKind === "image"
+                    source: WhatsAppClient.mediaSource(root.stagedPath)
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
                 }
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 0
-
-                    StyledText {
-                        Layout.fillWidth: true
-                        text: root.staged ? root.stagedName : "Anexo"
-                        color: Colours.palette.m3onSurface
-                        font: Tokens.font.body.small
-                        elide: Text.ElideMiddle
-                        maximumLineCount: 1
-                    }
-
-                    StyledText {
-                        Layout.fillWidth: true
-                        text: root.stagedError.length > 0 ? root.stagedError : root.sizeText(root.stagedSize)
-                        visible: text.length > 0
-                        color: root.stagedError.length > 0 ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
-                        font: Tokens.font.label.small
-                        elide: Text.ElideRight
-                        maximumLineCount: 1
-                    }
-                }
-
-                IconButton {
-                    Layout.alignment: Qt.AlignVCenter
-                    type: IconButton.Text
-                    icon: "close"
-                    onClicked: root.cancelStaged()
+                MaterialIcon {
+                    anchors.centerIn: parent
+                    visible: root.stagedKind !== "image"
+                    text: root._kindIcon(root.stagedKind)
+                    color: Colours.palette.m3onSurfaceVariant
+                    fontStyle: Tokens.font.icon.medium
                 }
             }
 
-            StyledTextField {
-                id: captionField
-
+            ColumnLayout {
                 Layout.fillWidth: true
-                visible: root.staged
-                type: StyledTextField.Filled
-                placeholderText: "Legenda…"
-                leadingIcon: "text_fields"
-                onAccepted: root.submit()
+                spacing: 0
+
+                StyledText {
+                    Layout.fillWidth: true
+                    text: root.staged ? root.stagedName : "Anexo"
+                    color: Colours.palette.m3onSurface
+                    font: Tokens.font.body.small
+                    elide: Text.ElideMiddle
+                    maximumLineCount: 1
+                }
+
+                StyledText {
+                    Layout.fillWidth: true
+                    text: root.stagedError.length > 0 ? root.stagedError : root.sizeText(root.stagedSize)
+                    visible: text.length > 0
+                    color: root.stagedError.length > 0 ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
+                    font: Tokens.font.label.small
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                }
+            }
+
+            IconButton {
+                Layout.alignment: Qt.AlignVCenter
+                type: IconButton.Text
+                icon: "close"
+                onClicked: root.cancelStaged()
             }
         }
     }
 
     // ------------------------------------------------------------------ //
-    // Input + ações
+    // Caixa de texto (pill nativo)
     // ------------------------------------------------------------------ //
-    RowLayout {
+    StyledRect {
+        id: bar
+
         Layout.fillWidth: true
-        spacing: Tokens.spacing.small
+        color: Colours.tPalette.m3surfaceContainer
+        radius: Tokens.rounding.extraLarge
+        border.width: input.activeFocus ? 1 : 0
+        border.color: Colours.palette.m3primary
+        implicitHeight: row.implicitHeight + root._pad * 2
 
-        StyledTextField {
-            id: input
-
-            Layout.fillWidth: true
-            visible: !root.staged
-            type: StyledTextField.Filled
-            placeholderText: WhatsAppClient.replyToId.length > 0 ? "Responder…" : "Mensagem"
-            leadingIcon: "chat_bubble"
-            readOnly: !WhatsAppClient.loggedIn
-
-            onAccepted: root.submit()
+        Behavior on border.width {
+            Anim {
+                type: Anim.FastEffects
+            }
         }
 
-        Item {
-            Layout.fillWidth: true
-            visible: root.staged
-        }
+        RowLayout {
+            id: row
 
-        IconButton {
-            type: IconButton.Text
-            icon: "attach_file"
-            disabled: !WhatsAppClient.loggedIn
-            onClicked: root.startPick()
-        }
+            anchors.fill: parent
+            anchors.margins: root._pad
+            spacing: Tokens.spacing.extraSmall
 
-        IconButton {
-            type: IconButton.Filled
-            icon: "send"
-            disabled: !WhatsAppClient.loggedIn || (!root.staged && input.text.trim().length === 0)
-            onClicked: root.submit()
+            IconButton {
+                Layout.alignment: Qt.AlignVCenter
+                type: IconButton.Text
+                icon: "attach_file"
+                disabled: !WhatsAppClient.loggedIn
+                onClicked: root.startPick()
+            }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                implicitHeight: input.implicitHeight
+
+                TextFieldBase {
+                    id: input
+
+                    anchors.fill: parent
+                    leftPadding: 0
+                    rightPadding: 0
+                    topPadding: 0
+                    bottomPadding: 0
+                    color: Colours.palette.m3onSurface
+                    font: Tokens.font.body.small
+                    readOnly: !WhatsAppClient.loggedIn
+
+                    onAccepted: root.submit()
+                }
+
+                StyledText {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.staged ? "Adicione uma legenda…" : (WhatsAppClient.replyToId.length > 0 ? "Responder…" : "Mensagem")
+                    color: Colours.palette.m3onSurfaceVariant
+                    font: input.font
+                    opacity: input.text.length > 0 ? 0 : 1
+
+                    Behavior on opacity {
+                        Anim {
+                            type: Anim.DefaultEffects
+                        }
+                    }
+                }
+            }
+
+            IconButton {
+                Layout.alignment: Qt.AlignVCenter
+                type: IconButton.Filled
+                icon: "send"
+                disabled: !WhatsAppClient.loggedIn || (!root.staged && input.text.trim().length === 0)
+                onClicked: root.submit()
+            }
         }
     }
 

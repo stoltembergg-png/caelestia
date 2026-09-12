@@ -140,11 +140,18 @@ PageBase {
         }
 
         ToggleRow {
-            last: true
             text: qsTr("Abrir ao passar o mouse")
             subtext: qsTr("Abrir o painel ao aproximar o cursor da borda da barra")
             checked: WhatsAppSettings.getBool("openOnHover", true)
             onToggled: WhatsAppSettings.set("openOnHover", checked)
+        }
+
+        ToggleRow {
+            last: true
+            text: qsTr("Modo compacto")
+            subtext: qsTr("Densidade menor na lista e nas conversas")
+            checked: WhatsAppSettings.getBool("compactMode", false)
+            onToggled: WhatsAppSettings.set("compactMode", checked)
         }
 
         StyledText {

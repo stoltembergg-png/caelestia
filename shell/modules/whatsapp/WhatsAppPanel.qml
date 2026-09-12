@@ -32,24 +32,6 @@ Item {
     // Sempre exatamente uma view ativa: nunca cai em "nenhuma visível".
     readonly property int page: root.showChat ? 2 : (root.showLogin ? 0 : 1)
 
-    function statusColour(): color {
-        if (WhatsAppClient.connectionState === "connected")
-            return Colours.palette.m3success;
-        if (WhatsAppClient.connectionState === "connecting")
-            return Colours.palette.m3tertiary;
-        return Colours.palette.m3error;
-    }
-
-    function statusLabel(): string {
-        if (WhatsAppClient.connectionState === "connected")
-            return "Conectado";
-        if (WhatsAppClient.connectionState === "connecting")
-            return "Conectando";
-        if (WhatsAppClient.connectionState === "needs_pairing")
-            return "Não pareado";
-        return "Offline";
-    }
-
     // O drawer abre/fecha só por ação explícita (barra/atalho/IPC, Esc e
     // fullscreen do core). Não há fecho por hover/perda de foco.
 
@@ -99,39 +81,6 @@ Item {
                 font: Tokens.font.title.small
                 elide: Text.ElideRight
                 maximumLineCount: 1
-            }
-
-            // Indicador de conexão.
-            RowLayout {
-                Layout.alignment: Qt.AlignVCenter
-                spacing: Tokens.spacing.extraSmall
-
-                StyledRect {
-                    id: dot
-
-                    Layout.alignment: Qt.AlignVCenter
-                    Layout.preferredWidth: 8
-                    Layout.preferredHeight: 8
-                    radius: 4
-                    color: root.statusColour()
-
-                    Behavior on color {
-                        CAnim {}
-                    }
-                }
-
-                StyledText {
-                    Layout.alignment: Qt.AlignVCenter
-                    text: root.statusLabel()
-                    color: Colours.palette.m3onSurfaceVariant
-                    font: Tokens.font.label.small
-                }
-            }
-
-            IconButton {
-                type: IconButton.Text
-                icon: "refresh"
-                onClicked: WhatsAppClient.refreshChats()
             }
 
             IconButton {

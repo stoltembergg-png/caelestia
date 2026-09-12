@@ -22,11 +22,13 @@ Item {
     property string messageId: ""
     property string chat: ""
     property bool fromMe: false
+    property bool hasMedia: false
 
     readonly property var quickEmojis: ["👍", "❤️", "😂", "😮", "😢", "🙏"]
 
     signal replyRequested(string chat, string messageId, bool fromMe)
     signal reactRequested(string chat, string messageId, string emoji)
+    signal openSystemRequested(string chat, string messageId, string path)
 
     readonly property point _anchor: root.target ? root.target.mapToItem(root, 0, 0) : Qt.point(0, 0)
     readonly property real _ax: Math.max(8, Math.min(root.width - menu.width - 8, root._anchor.x))
@@ -35,11 +37,12 @@ Item {
         return Math.max(8, Math.min(root.height - menu.height - 8, below));
     }
 
-    function openFor(item, id, chatJid, isFromMe): void {
+    function openFor(item, id, chatJid, isFromMe, media): void {
         root.target = item;
         root.messageId = String(id || "");
         root.chat = String(chatJid || "");
         root.fromMe = isFromMe === true;
+        root.hasMedia = media === true || (media && String(media.kind || "").length > 0);
         root.visible = true;
     }
 
@@ -122,6 +125,43 @@ Item {
                     radius: parent.radius
                     onClicked: {
                         root.replyRequested(root.chat, root.messageId, root.fromMe);
+                        root.close();
+                    }
+                }
+            }
+
+            // Abrir no sistema (ação secundária, só para mídia)
+            StyledRect {
+                visible: root.hasMedia
+                implicitWidth: systemRow.implicitWidth
+                implicitHeight: systemRow.implicitHeight + Tokens.spacing.small
+                radius: Tokens.rounding.small
+                color: "transparent"
+
+                Row {
+                    id: systemRow
+
+                    anchors.centerIn: parent
+                    spacing: Tokens.spacing.small
+
+                    MaterialIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "open_in_new"
+                        color: Colours.palette.m3onSurfaceVariant
+                        fontStyle: Tokens.font.icon.small
+                    }
+
+                    StyledText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Abrir no sistema")
+                        font: Tokens.font.body.small
+                    }
+                }
+
+                StateLayer {
+                    radius: parent.radius
+                    onClicked: {
+                        root.openSystemRequested(root.chat, root.messageId, "");
                         root.close();
                     }
                 }

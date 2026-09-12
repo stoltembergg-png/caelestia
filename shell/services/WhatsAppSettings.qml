@@ -23,7 +23,8 @@ Singleton {
     readonly property var defaults: ({
             "notifications": true,
             "openOnHover": true,
-            "hoverDwell": 450
+            "hoverDwell": 450,
+            "compactMode": false
         })
 
     // Valores efetivos (defaults + JSON). Nunca vazio.

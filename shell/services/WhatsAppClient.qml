@@ -48,6 +48,10 @@ Singleton {
     property string currentChatName: ""
     property string currentChatAvatar: ""
 
+    // Visualizador de mídia (overlay do shell).
+    property string viewerPath: ""
+    property bool viewerVisible: false
+
     // Alvo de resposta (faixa de citação no composer).
     property string replyToId: ""
     property string replyToName: ""
@@ -728,6 +732,7 @@ Singleton {
         if (!jid)
             return;
         const id = String(jid);
+        root.closeViewer();
         root.currentChat = id;
         root.currentChatName = root._chatName(id);
         const ci = root._chatIndex(id);
@@ -751,6 +756,7 @@ Singleton {
     }
 
     function closeChat() {
+        root.closeViewer();
         root.currentChat = "";
         root.currentChatName = "";
         root.currentChatAvatar = "";
@@ -1065,6 +1071,30 @@ Singleton {
         if (!p.length)
             return;
         Quickshell.execDetached(["xdg-open", p]);
+    }
+
+    // Fonte pronta para Image.source a partir de um caminho/URI do daemon.
+    function mediaSource(path) {
+        const s = String(path || "");
+        if (!s.length)
+            return "";
+        if (s.startsWith("data:") || s.startsWith("file:") || s.startsWith("qrc:"))
+            return s;
+        if (s.indexOf("://") >= 0)
+            return s;
+        return "file://" + s;
+    }
+
+    function openViewer(path) {
+        const p = String(path || "");
+        if (!p.length)
+            return;
+        root.viewerPath = p;
+        root.viewerVisible = true;
+    }
+
+    function closeViewer() {
+        root.viewerVisible = false;
     }
 
     // Baixa (ou reaproveita o cache) e devolve o objeto media via callback.

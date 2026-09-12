@@ -125,4 +125,10 @@ Item {
             drawer: root
         }
     }
+
+    // Overlay de mídia (só no monitor focado).
+    MediaViewer {
+        screen: root.screen
+        active: root.focused
+    }
 }

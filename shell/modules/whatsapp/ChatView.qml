@@ -18,6 +18,8 @@ import qs.extras.whatsapp
 Item {
     id: root
 
+    readonly property bool compact: WhatsAppSettings.getBool("compactMode", false)
+
     ColumnLayout {
         anchors.fill: parent
         spacing: Tokens.spacing.small
@@ -31,9 +33,9 @@ Item {
 
                 anchors.fill: parent
                 model: WhatsAppClient.messages
-                spacing: Tokens.spacing.extraSmall
-                topMargin: Tokens.spacing.small
-                bottomMargin: Tokens.spacing.small
+                spacing: root.compact ? 1 : Tokens.spacing.extraSmall
+                topMargin: root.compact ? Tokens.spacing.extraSmall : Tokens.spacing.small
+                bottomMargin: root.compact ? Tokens.spacing.small : Tokens.spacing.small
                 boundsBehavior: Flickable.StopAtBounds
                 reuseItems: false
 
@@ -84,8 +86,9 @@ Item {
                             reactions: wrapper.reactions
                             localPath: wrapper.localPath
                             upload: wrapper.upload
+                            compact: root.compact
 
-                            onContextRequested: contextMenu.openFor(bubble, wrapper.messageId, wrapper.chat, wrapper.fromMe)
+                            onContextRequested: contextMenu.openFor(bubble, wrapper.messageId, wrapper.chat, wrapper.fromMe, !!(wrapper.media && String(wrapper.media.kind || "").length))
                         }
                     }
                 }
@@ -148,6 +151,7 @@ Item {
 
         onReplyRequested: (chat, messageId, fromMe) => WhatsAppClient.beginReply(chat, messageId, fromMe)
         onReactRequested: (chat, messageId, emoji) => WhatsAppClient.react(chat, messageId, emoji)
+        onOpenSystemRequested: (chat, messageId, path) => WhatsAppClient.openMedia(chat, messageId, path)
     }
 
     Connections {

@@ -25,6 +25,7 @@ Item {
     property string localPath: ""
     property var upload: null
     property bool fromMe: false
+    property bool compact: false
 
     property bool _busy: false
     property bool _error: false
@@ -45,13 +46,19 @@ Item {
     readonly property string _local: root._pending ? String(root.localPath || "") : ""
     readonly property bool _hasImage: root._path.length > 0 || root._thumb.length > 0 || root._local.length > 0
     readonly property string _imageSource: {
-        const p = root._path.length ? root._path : (root._thumb.length ? root._thumb : root._local);
-        return p.length ? "file://" + p : "";
+        // Imagem/figurinha: full quando baixado, senão thumb. Vídeo: sempre o
+        // thumb (o path é um vídeo e o Image não o renderiza).
+        let p = "";
+        if (root._imageLike)
+            p = root._path.length ? root._path : (root._thumb.length ? root._thumb : root._local);
+        else
+            p = root._thumb.length ? root._thumb : root._local;
+        return WhatsAppClient.mediaSource(p);
     }
-    readonly property real _prefW: root._kind === "sticker" ? 140 : 240
+    readonly property real _prefW: root._kind === "sticker" ? (root.compact ? 110 : 140) : (root.compact ? 180 : 240)
     readonly property real _aspect: (root.media && root.media.width > 0 && root.media.height > 0) ? (root.media.height / root.media.width) : 0.75
     readonly property real _imgW: root._prefW
-    readonly property real _imgH: Math.max(80, Math.min(320, Math.round(root._imgW * root._aspect)))
+    readonly property real _imgH: Math.max(root.compact ? 64 : 80, Math.min(root.compact ? 240 : 320, Math.round(root._imgW * root._aspect)))
 
     function sizeText(bytes): string {
         const n = Number(bytes || 0);
@@ -112,8 +119,12 @@ Item {
         if (root._busy || root._pending)
             return;
         root._error = false;
+        // Cache: abre direto (imagem/figurinha no overlay; resto no sistema).
         if (root._path.length) {
-            WhatsAppClient.openPath(root._path);
+            if (root._imageLike)
+                WhatsAppClient.openViewer(root._path);
+            else
+                WhatsAppClient.openPath(root._path);
             return;
         }
         root._busy = true;
@@ -123,7 +134,12 @@ Item {
                 root._error = true;
                 return;
             }
-            WhatsAppClient.openPath(media.path);
+            // O modelo já foi atualizado (media.path/thumb, downloaded=true) e a
+            // bolha troca para o full; aqui abrimos o visualizador/ sistema.
+            if (root._imageLike)
+                WhatsAppClient.openViewer(media.path);
+            else
+                WhatsAppClient.openPath(media.path);
         });
     }
 
