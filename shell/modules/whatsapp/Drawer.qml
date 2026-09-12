@@ -27,6 +27,12 @@ Item {
     // Recebido pelo patch do core; mantido para futura observação.
     property var screenState
 
+    // O conteúdo do drawer é carregado por um Loader lazy. Tocar no singleton
+    // aqui garante que ele exista (e o socket IPC suba) no boot do shell, e não
+    // só na primeira abertura — assim o estado de auth e as conversas já estão
+    // prontos quando o painel aparece.
+    readonly property bool clientAlive: WhatsAppClient.socketConnected || WhatsAppClient.paired
+
     // ------------------------------------------------------------------ //
     // API / geometria (contrato congelado)
     // ------------------------------------------------------------------ //

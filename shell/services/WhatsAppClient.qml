@@ -73,6 +73,13 @@ Singleton {
     // Quickshell.Io.Socket não limpa o QLocalSocket quando a 1ª tentativa de
     // conexão falha — recriar garante um connect novo e limpo).
     readonly property var socket: sockLoader.item
+    // Referência viva ao Socket em uso, capturada pelo próprio componente
+    // (id `sock`). `sockLoader.item` só é atribuído quando a criação do objeto
+    // termina, e o `onConnectedChanged` de um socket local pode disparar
+    // durante a construção; sem esta referência o primeiro `status` ficava
+    // preso na fila (nada era escrito, nenhuma resposta chegava e o cliente
+    // permanecia "não pareado" para sempre).
+    property var _io: null
 
     Loader {
         id: sockLoader
@@ -80,6 +87,8 @@ Singleton {
         active: true
         asynchronous: false
         sourceComponent: Socket {
+            id: sock
+
             path: root.socketPath
             connected: true
 
@@ -87,7 +96,7 @@ Singleton {
                 onRead: data => root._onLine(data)
             }
 
-            onConnectedChanged: root._onSocketConnectedChanged(connected)
+            onConnectedChanged: root._onSocketConnectedChanged(sock, connected)
             // qmllint disable signal-handler-parameters
             // O enum QLocalSocket::LocalSocketError não está no qmltypes; o
             // parâmetro é válido em runtime.
@@ -180,7 +189,7 @@ Singleton {
     }
 
     function _connected(): bool {
-        return root.socket !== null && root.socket !== undefined && root.socketConnected;
+        return root._io !== null && root._io !== undefined && root.socketConnected;
     }
 
     // Extrai a mensagem de erro do envelope de erro do daemon.
@@ -218,8 +227,8 @@ Singleton {
         };
         if (entry.params !== null && entry.params !== undefined)
             payload.params = entry.params;
-        root.socket.write(JSON.stringify(payload) + "\n");
-        root.socket.flush();
+        root._io.write(JSON.stringify(payload) + "\n");
+        root._io.flush();
     }
 
     function _flushQueue() {
@@ -260,7 +269,8 @@ Singleton {
     // ------------------------------------------------------------------ //
     // Ciclo de vida da conexão
     // ------------------------------------------------------------------ //
-    function _onSocketConnectedChanged(connected) {
+    function _onSocketConnectedChanged(sock, connected) {
+        root._io = connected ? sock : null;
         root.socketConnected = connected;
         if (connected)
             root._onConnected();
@@ -314,6 +324,7 @@ Singleton {
         // tentativa anterior falhou antes de conectar.
         root._failPending("disconnected", "reconnecting");
         root.socketConnected = false;
+        root._io = null;
         sockLoader.active = false;
         recreateTimer.restart();
     }

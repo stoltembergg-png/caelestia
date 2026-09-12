@@ -24,11 +24,11 @@ Item {
     // `paired` cobre logged_in, authState e connectionState, então o LoginView
     // nunca fica sobreposto à lista quando o daemon anuncia "connected".
     readonly property bool paired: WhatsAppClient.paired
-    readonly property int page: {
-        if (!root.paired)
-            return 0;
-        return WhatsAppClient.currentChat.length > 0 ? 2 : 1;
-    }
+    readonly property bool showLogin: !root.paired
+    readonly property bool showChat: root.paired && String(WhatsAppClient.currentChat).length > 0
+    readonly property bool showList: root.paired && !root.showChat
+    // Sempre exatamente uma view ativa: nunca cai em "nenhuma visível".
+    readonly property int page: root.showChat ? 2 : (root.showLogin ? 0 : 1)
 
     function statusColour(): color {
         if (WhatsAppClient.connectionState === "connected")
@@ -75,14 +75,14 @@ Item {
             spacing: Tokens.spacing.extraSmall
 
             IconButton {
-                visible: root.page === 2
+                visible: root.showChat
                 type: IconButton.Text
                 icon: "arrow_back"
                 onClicked: WhatsAppClient.closeChat()
             }
 
             MaterialIcon {
-                visible: root.page !== 2
+                visible: !root.showChat
                 text: "forum"
                 color: Colours.palette.m3primary
                 fontStyle: Tokens.font.icon.medium
@@ -90,7 +90,7 @@ Item {
 
             StyledText {
                 Layout.fillWidth: true
-                text: root.page === 2 ? WhatsAppClient.currentChatName : "WhatsApp"
+                text: root.showChat ? WhatsAppClient.currentChatName : "WhatsApp"
                 font: Tokens.font.title.small
                 elide: Text.ElideRight
                 maximumLineCount: 1
@@ -130,7 +130,7 @@ Item {
             }
 
             IconButton {
-                visible: WhatsAppClient.loggedIn && root.page !== 2
+                visible: root.paired && !root.showChat
                 type: IconButton.Text
                 icon: "logout"
                 onClicked: WhatsAppClient.logout()
@@ -146,9 +146,9 @@ Item {
 
             LoginView {
                 anchors.fill: parent
-                opacity: root.page === 0 ? 1 : 0
-                visible: root.page === 0
-                enabled: root.page === 0
+                opacity: root.showLogin ? 1 : 0
+                visible: root.showLogin
+                enabled: root.showLogin
                 onGenerate: WhatsAppClient.startLogin()
 
                 Behavior on opacity {
@@ -160,9 +160,9 @@ Item {
 
             ChatList {
                 anchors.fill: parent
-                opacity: root.page === 1 ? 1 : 0
-                visible: root.page === 1
-                enabled: root.page === 1
+                opacity: root.showList ? 1 : 0
+                visible: root.showList
+                enabled: root.showList
 
                 Behavior on opacity {
                     Anim {
@@ -173,9 +173,9 @@ Item {
 
             ChatView {
                 anchors.fill: parent
-                opacity: root.page === 2 ? 1 : 0
-                visible: root.page === 2
-                enabled: root.page === 2
+                opacity: root.showChat ? 1 : 0
+                visible: root.showChat
+                enabled: root.showChat
 
                 Behavior on opacity {
                     Anim {
