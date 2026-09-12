@@ -15,6 +15,7 @@ Integração **nativa** do WhatsApp para o Caelestia Shell: daemon Go (`whatsmeo
 - **F3** UI QML nativa: serviço `WhatsAppClient` (socket/backoff/fila), drawer, lista de chats, conversa, composer e QR — estilo Caelestia.
 - **F4** (parcial no MVP) eventos de domínio em tempo real (`message.received/updated`, `receipt.updated`, `chat.updated`), read receipts, nomes resolvidos (contatos/LID/pushname/grupo).
 - **F5** badge de não lidas na barra, página “WhatsApp” no Nexus e notificações nativas (`gdbus` + ação “Abrir”).
+- **F6** mídia e avatares: avatares reais com backfill preguiçoso, download de imagens/vídeos/áudios/documentos com cache + thumbnails, **responder** (quote) e **reações** (exibir/enviar, `message.react`).
 
 O daemon roda independente do shell (`systemctl --user`); a UI reconecta sozinha ao socket.
 
@@ -92,10 +93,11 @@ dono. Sem HTTP/TCP.
 
 ## Limitações conhecidas
 
-- **Sem mídia e sem recursos avançados de grupos** ainda (download/envio de
-  imagens, áudio, documentos, reações, reply, busca, etc. são fases futuras). O
-  histórico e os eventos de domínio (`message.received`, `receipt.updated`, …)
-  já são persistidos e publicados no IPC em tempo real.
+- **Envio de mídia e recursos avançados de grupos** ainda não (enviar
+  imagens/áudio/documentos, busca na UI, criar/administrar grupos). Receber mídia
+  (download com cache + thumbnails), avatares reais, responder e reações já
+  funcionam; o histórico e os eventos de domínio (`message.received`,
+  `receipt.updated`, …) são persistidos e publicados no IPC em tempo real.
 - **Nomes de contatos** dependem do store do whatsmeow (contatos/LID/pushname);
   sem contato salvo, cai num PN formatado (`+55…`).
 - **`whatsmeow` é não oficial** e viola os ToS do WhatsApp; há risco de
