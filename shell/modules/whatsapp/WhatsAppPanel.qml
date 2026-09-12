@@ -42,15 +42,23 @@ Item {
         spacing: Tokens.spacing.small
 
         // -------------------------------------------------------------- //
-        // Header
+        // Header (superfície própria, legível sobre o fundo translúcido)
         // -------------------------------------------------------------- //
-        RowLayout {
+        StyledRect {
             Layout.fillWidth: true
-            // O corpo ocupa a largura inteira do drawer; só o header é
-            // recuado, para não encostar no canto arredondado.
-            Layout.leftMargin: Tokens.padding.large
-            Layout.rightMargin: Tokens.padding.small
-            spacing: Tokens.spacing.extraSmall
+            Layout.leftMargin: Tokens.spacing.extraSmall
+            Layout.rightMargin: Tokens.spacing.extraSmall
+            implicitHeight: header.implicitHeight + Tokens.padding.small * 2
+            radius: Tokens.rounding.medium
+            color: Colours.palette.m3surfaceContainer
+
+            RowLayout {
+                id: header
+
+                anchors.fill: parent
+                anchors.leftMargin: Tokens.padding.large
+                anchors.rightMargin: Tokens.padding.small
+                spacing: Tokens.spacing.extraSmall
 
             IconButton {
                 visible: root.showChat
@@ -88,6 +96,7 @@ Item {
                 type: IconButton.Text
                 icon: "logout"
                 onClicked: WhatsAppClient.logout()
+            }
             }
         }
 

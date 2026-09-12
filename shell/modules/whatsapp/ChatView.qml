@@ -18,7 +18,52 @@ import qs.extras.whatsapp
 Item {
     id: root
 
+    // Scrim sutil no rodapé: reduz o bleed do fundo translúcido atrás do
+    // composer e do último balão (mantém a transparência geral do painel).
+    StyledRect {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: Math.min(parent.height * 0.26, 190)
+        gradient: Gradient {
+            GradientStop {
+                position: 0
+                color: "transparent"
+            }
+            GradientStop {
+                position: 1
+                color: Qt.alpha(Colours.palette.m3surface, 0.92)
+            }
+        }
+    }
+
     readonly property bool compact: WhatsAppSettings.getBool("compactMode", false)
+
+    // A mídia carrega de forma assíncrona e aumenta o contentHeight DEPOIS do
+    // positionViewAtEnd; sem re-rolar, o último balão (legenda/timestamp/cauda)
+    // fica abaixo da dobra/fade. Re-posiciona por ~1,2 s após abrir/receber.
+    function stickBottom(): void {
+        stickTimer.restart();
+    }
+
+    Timer {
+        id: stickTimer
+
+        interval: 150
+        repeat: true
+        property int ticks: 0
+
+        onTriggered: {
+            ticks++;
+            list.positionViewAtEnd();
+            if (ticks >= 8)
+                stop();
+        }
+        onRunningChanged: {
+            if (running)
+                ticks = 0;
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -224,11 +269,11 @@ Item {
 
         function onMessageAppended(jid) {
             if (jid === WhatsAppClient.currentChat)
-                Qt.callLater(() => list.positionViewAtEnd());
+                root.stickBottom();
         }
 
         function onCurrentChatChanged() {
-            Qt.callLater(() => list.positionViewAtEnd());
+            root.stickBottom();
         }
     }
 }
