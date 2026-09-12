@@ -11,8 +11,8 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
-import Quickshell.Hyprland
 import Quickshell.Io
+import qs.components.misc
 
 Singleton {
     id: root
