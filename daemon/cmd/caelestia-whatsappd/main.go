@@ -1,19 +1,24 @@
 // Command caelestia-whatsappd is the native WhatsApp backend daemon.
 //
-// This step wires configuration, logging and the SQLite database only. IPC and
-// whatsmeow are intentionally not part of it yet.
+// It wires configuration, logging, the SQLite database and the IPC server. The
+// whatsmeow client is intentionally not part of it yet: the exposed ping/status
+// methods are enough to exercise the socket end to end.
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/config"
 	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/database"
+	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/ipc"
 	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/logging"
 )
 
@@ -61,6 +66,28 @@ func run(args []string) error {
 	)
 	logger.Info("database ready", slog.String("path", dbPath))
 
+	startedAt := time.Now()
+	ipcServer := ipc.NewServer(cfg.Socket, logger)
+	ipcServer.Register("ping", func(_ context.Context, _ *ipc.Client, _ json.RawMessage) (any, *ipc.Error) {
+		return map[string]any{"pong": true, "version": version}, nil
+	})
+	ipcServer.Register("status", func(_ context.Context, _ *ipc.Client, _ json.RawMessage) (any, *ipc.Error) {
+		return map[string]any{
+			"version":        version,
+			"uptime_seconds": int64(time.Since(startedAt).Seconds()),
+			"data_dir":       cfg.DataDir,
+			"socket":         cfg.Socket,
+			// Placeholders until the whatsmeow integration lands (phase 2.3+).
+			"connection": map[string]any{"state": "disconnected"},
+			"auth":       map[string]any{"state": "unknown"},
+		}, nil
+	})
+	if err := ipcServer.Start(); err != nil {
+		_ = db.Close()
+		return err
+	}
+	logger.Info("ipc server listening", slog.String("socket", cfg.Socket))
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
@@ -68,6 +95,11 @@ func run(args []string) error {
 	logger.Info("ready; waiting for shutdown signal")
 	sig := <-sigCh
 	logger.Info("shutdown signal received", slog.String("signal", sig.String()))
+
+	if err := ipcServer.Close(); err != nil {
+		return fmt.Errorf("close ipc server: %w", err)
+	}
+	logger.Info("ipc server stopped")
 
 	if err := db.Close(); err != nil {
 		return fmt.Errorf("close database: %w", err)
