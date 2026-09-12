@@ -44,10 +44,73 @@ type fakeClient struct {
 
 	connectErr error
 	logoutErr  error
+
+	// Local name-resolution store: contact names plus the LID<->PN mapping.
+	// nameReads counts GetContact/GetPNForLID/GetLIDForPN calls so tests can
+	// assert the resolver cache is doing its job.
+	contacts  map[types.JID]types.ContactInfo
+	pns       map[types.JID]types.JID
+	lids      map[types.JID]types.JID
+	nameReads int
 }
 
 func newFakeClient() *fakeClient {
-	return &fakeClient{qrChan: make(chan whatsmeow.QRChannelItem, 8)}
+	return &fakeClient{
+		qrChan:   make(chan whatsmeow.QRChannelItem, 8),
+		contacts: make(map[types.JID]types.ContactInfo),
+		pns:      make(map[types.JID]types.JID),
+		lids:     make(map[types.JID]types.JID),
+	}
+}
+
+// GetContact implements nameSource.
+func (f *fakeClient) GetContact(_ context.Context, user types.JID) (types.ContactInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nameReads++
+	if info, ok := f.contacts[user]; ok {
+		info.Found = true
+		return info, nil
+	}
+	return types.ContactInfo{}, nil
+}
+
+// GetPNForLID implements nameSource.
+func (f *fakeClient) GetPNForLID(_ context.Context, lid types.JID) (types.JID, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nameReads++
+	return f.pns[lid], nil
+}
+
+// GetLIDForPN implements nameSource.
+func (f *fakeClient) GetLIDForPN(_ context.Context, pn types.JID) (types.JID, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nameReads++
+	return f.lids[pn], nil
+}
+
+// setNameContact registers a contact in the fake session store.
+func (f *fakeClient) setNameContact(user types.JID, info types.ContactInfo) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.contacts[user] = info
+}
+
+// setLIDMapping registers lid <-> pn in both directions.
+func (f *fakeClient) setLIDMapping(lid, pn types.JID) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pns[lid] = pn
+	f.lids[pn] = lid
+}
+
+// nameReadCount returns how many store reads the resolver performed.
+func (f *fakeClient) nameReadCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.nameReads
 }
 
 func (f *fakeClient) AddEventHandler(h whatsmeow.EventHandler) uint32 {

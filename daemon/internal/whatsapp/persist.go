@@ -295,21 +295,16 @@ func (p *Persister) persistMessageWithRepo(ctx context.Context, repo *database.R
 		kind = "group"
 	}
 
-	// Prefer a known group name, then contact name, then push name. An empty
-	// name is passed through: UpsertChat never overwrites a known name.
-	name := ""
-	if kind == "group" {
-		if g, err := repo.GetGroup(ctx, chatJID); err == nil {
-			name = g.Name
-		}
+	// Resolve the display name: group subject, then saved contact (walking any
+	// LID<->PN mapping), then push name. An unresolved name is passed through
+	// as "": UpsertChat never overwrites a known name with an empty one and a
+	// lazy fallback (formatted phone / raw JID) is never persisted as if it
+	// were a real name.
+	push := ""
+	if !m.Info.IsFromMe {
+		push = m.Info.PushName
 	}
-	if name == "" {
-		push := ""
-		if !m.Info.IsFromMe {
-			push = m.Info.PushName
-		}
-		name = p.resolveName(ctx, repo, chatJID, push)
-	}
+	name := p.resolveName(ctx, repo, chatJID, push)
 	if err := repo.UpsertChat(ctx, database.Chat{JID: chatJID, Kind: kind, Name: name}); err != nil {
 		return err
 	}
@@ -392,6 +387,12 @@ func (p *Persister) emitChatUpdated(c *database.Chat) {
 	if c == nil {
 		return
 	}
+	p.emitDomain(EventChatUpdated, chatUpdatedData(c))
+}
+
+// chatUpdatedData builds the chat.updated payload from a committed chat row.
+// Shared by the Persister and the chats.list name backfill.
+func chatUpdatedData(c *database.Chat) map[string]any {
 	data := map[string]any{
 		"jid":          c.JID,
 		"unread":       c.UnreadCount,
@@ -401,7 +402,7 @@ func (p *Persister) emitChatUpdated(c *database.Chat) {
 	if c.Name != "" {
 		data["name"] = c.Name
 	}
-	p.emitDomain(EventChatUpdated, data)
+	return data
 }
 
 // persistReaction stores a reaction as metadata only, in cae_reactions. It
@@ -656,6 +657,14 @@ func (p *Persister) persistConversation(
 			return err
 		}
 	}
+	// The conversation display name is authoritative and must win over a push
+	// name picked up while replaying its messages (persistMessageWithRepo
+	// resolves names too, and UpsertChat overwrites any non-empty name).
+	if chatName != "" {
+		if err := repo.UpsertChat(ctx, database.Chat{JID: chatJID, Kind: kind, Name: chatName}); err != nil {
+			return err
+		}
+	}
 	if lastTS > 0 {
 		if err := repo.SetChatLastTimestamp(ctx, chatJID, int64(lastTS)*1000); err != nil {
 			return err
@@ -665,22 +674,21 @@ func (p *Persister) persistConversation(
 	return repo.SetUnread(ctx, chatJID, unread)
 }
 
-// resolveName returns the best display name for jid: contact (full then first)
-// > push > "" (caller falls back to the JID). repo is passed explicitly so the
-// lookup can run inside the caller's transaction.
+// resolveName returns the best *resolved* display name for jid (group subject,
+// saved contact through any LID<->PN mapping, then push name), or "" when only
+// a fallback (formatted phone / raw JID) is available. Persistence stores the
+// empty string in that case so a later message can still improve the name;
+// resolution is cached for a short while by the shared NameResolver. repo is
+// passed explicitly so the lookup can run inside the caller's transaction.
 func (p *Persister) resolveName(ctx context.Context, repo *database.Repo, jid, push string) string {
-	if c, err := repo.GetContact(ctx, jid); err == nil {
-		if c.FullName != "" {
-			return c.FullName
-		}
-		if c.FirstName != "" {
-			return c.FirstName
-		}
+	if p == nil || p.svc == nil {
+		return ""
 	}
-	if push != "" {
-		return push
+	name, resolved := p.svc.nameResolver().Resolve(ctx, repo, jid, push)
+	if !resolved {
+		return ""
 	}
-	return ""
+	return name
 }
 
 // extractText returns the human-readable text and a coarse type for a message.

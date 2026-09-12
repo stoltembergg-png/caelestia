@@ -116,6 +116,11 @@ type Service struct {
 	device    *store.Device
 	persister *Persister
 
+	// namesMu guards the lazily created display-name resolver. It is separate
+	// from mu because nameResolver() is called while mu may already be held.
+	namesMu sync.Mutex
+	names   *NameResolver
+
 	stateMu        sync.RWMutex
 	state          State
 	onStateChanged func(State)
@@ -521,6 +526,31 @@ func (s *Service) currentDevice() *store.Device {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.device
+}
+
+// nameResolver returns the shared display-name resolver, lazily creating it so
+// a Service literal built by a test works without extra wiring. The resolver
+// fetches the current client through nameSource on every call, so a rebuilt
+// client after re-pairing is used automatically.
+func (s *Service) nameResolver() *NameResolver {
+	s.namesMu.Lock()
+	defer s.namesMu.Unlock()
+	if s.names == nil {
+		s.names = NewNameResolver(s.nameSource, s.logger)
+	}
+	return s.names
+}
+
+// nameSource returns the current client's local name-lookup surface, or nil
+// when there is no paired/live client. Reads are local (whatsmeow's SQLite
+// store) and never touch the network.
+func (s *Service) nameSource() nameSource {
+	c := s.fullClient()
+	if c == nil {
+		return nil
+	}
+	ns, _ := c.(nameSource)
+	return ns
 }
 
 // connectedData builds the payload for auth.connected. The JID is the user's

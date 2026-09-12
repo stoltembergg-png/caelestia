@@ -149,10 +149,61 @@ func (m *Methods) ChatsList(ctx context.Context, params json.RawMessage) (any, *
 		return nil, internalError(err)
 	}
 	out := make([]map[string]any, 0, len(chats))
-	for _, c := range chats {
+	for i := range chats {
+		c := chats[i]
+		// Lazy backfill: a chat whose name was never known (or was stored as a
+		// raw @lid by an older build) is resolved on read, persisted and then
+		// returned. The resolver's short-lived cache keeps repeated calls cheap.
+		c.Name = m.backfillChatName(ctx, &c)
 		out = append(out, chatPayload(c))
 	}
 	return out, nil
+}
+
+// backfillChatName resolves a missing chat name, persists it and emits
+// chat.updated when it changed. It returns the display name to use (the
+// resolved name, the fallback when only a fallback exists, or the stored name
+// when it is already valid). It never persists a fallback.
+func (m *Methods) backfillChatName(ctx context.Context, c *database.Chat) string {
+	if c == nil {
+		return ""
+	}
+	if chatNameResolved(c.Name, c.JID) {
+		return c.Name
+	}
+	name, resolved := m.svc.nameResolver().Resolve(ctx, m.repo, c.JID, "")
+	if !resolved {
+		// Display the fallback (formatted PN) but leave cae_chats.name empty so
+		// a later contact/push name can still be picked up.
+		if name != "" {
+			return name
+		}
+		return c.JID
+	}
+	if name == "" || name == c.Name {
+		return firstNonEmpty(c.Name, name)
+	}
+	if err := m.repo.UpsertChat(ctx, database.Chat{JID: c.JID, Kind: c.Kind, Name: name}); err != nil {
+		m.logger.Warn("whatsapp: backfill chat name failed",
+			slog.String("jid", logging.RedactJID(c.JID)),
+			slog.String("error", err.Error()))
+		return firstNonEmpty(c.Name, name)
+	}
+	c.Name = name
+	m.svc.emit(EventChatUpdated, chatUpdatedData(c))
+	return name
+}
+
+// chatNameResolved reports whether name is a real display name rather than a
+// missing value or a raw identifier (jid or @lid).
+func chatNameResolved(name, jid string) bool {
+	if name == "" || name == jid {
+		return false
+	}
+	if strings.HasSuffix(name, "@"+types.HiddenUserServer) {
+		return false
+	}
+	return true
 }
 
 // --- chat.open ---
@@ -180,6 +231,7 @@ func (m *Methods) ChatOpen(ctx context.Context, params json.RawMessage) (any, *i
 		}
 		return nil, internalError(err)
 	}
+	c.Name = m.backfillChatName(ctx, c)
 	return chatPayload(*c), nil
 }
 
@@ -496,18 +548,16 @@ func parseJID(s string) (types.JID, error) {
 	return types.ParseJID(s)
 }
 
-// chatName resolves the best locally known name for a chat.
+// chatName returns a resolved display name for a chat, or "" when only a
+// fallback is available (storeOutgoing must not persist a fallback as a name).
 func (m *Methods) chatName(ctx context.Context, chatJID string) string {
-	if c, err := m.repo.GetChat(ctx, chatJID); err == nil && c.Name != "" {
+	c, err := m.repo.GetChat(ctx, chatJID)
+	if err == nil && chatNameResolved(c.Name, c.JID) {
 		return c.Name
 	}
-	if c, err := m.repo.GetContact(ctx, chatJID); err == nil {
-		if c.FullName != "" {
-			return c.FullName
-		}
-		if c.FirstName != "" {
-			return c.FirstName
-		}
+	name, resolved := m.svc.nameResolver().Resolve(ctx, m.repo, chatJID, "")
+	if !resolved {
+		return ""
 	}
-	return ""
+	return name
 }

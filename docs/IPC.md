@@ -357,9 +357,22 @@ Response:
 }
 ```
 
-Campos: `jid`, `kind` (`dm`/`group`), `name` (contato > push > JID),
-`lastMessage` (preview), `timestamp` (**string** de milissegundos; `""` quando
-desconhecido), `unread`. `lastMessageId` aparece quando conhecido.
+Campos: `jid`, `kind` (`dm`/`group`), `name`, `lastMessage` (preview),
+`timestamp` (**string** de milissegundos; `""` quando desconhecido), `unread`.
+`lastMessageId` aparece quando conhecido.
+
+`name` é resolvido nesta ordem: contato salvo (`cae_contacts` ou o store do
+whatsmeow) → contato do PN/LID alternativo (para `@lid`, o PN obtido de
+`whatsmeow_lid_map`; e o inverso para um PN) → push name (incluindo o hint da
+mensagem que originou a conversa) → nome do grupo → fallback (`+<PN>` formatado
+ou o próprio JID). Um `@lid` nunca é devolvido como nome quando o PN é
+conhecido.
+
+`chats.list` faz **backfill preguiçoso**: chats com nome ausente ou gravado como
+identificador cru têm o nome resolvido na leitura, persistido em
+`cae_chats.name` e devolvido já resolvido. Quando o nome muda, um evento
+`chat.updated` é emitido para os demais clientes. A resolução usa apenas o
+store local (sem chamadas de rede) e um cache curto em memória por JID.
 
 ### `chat.open` (fase 2.4)
 
@@ -556,7 +569,7 @@ fila ainda são emitidos para os clientes conectados.
 | `message.received` | `{chat, sender, id, text, timestamp, from_me, type}` | mensagem **nova** inserida (entrada ou eco próprio de outro dispositivo) |
 | `message.updated` | `{chat, id, edited?, deleted?}` | `REVOKE` (`deleted:true`) ou `MESSAGE_EDIT` (`edited:true`); o campo que não se aplica é omitido |
 | `receipt.updated` | `{chat, ids, status}` | recibo (`delivered` ou `read`); `ids` é uma lista de strings |
-| `chat.updated` | `{jid, name?, unread, last_message, last_ts}` | `unread` ou a última mensagem mudou (mensagem nova ou leitura que zera o contador); `name` só quando conhecido |
+| `chat.updated` | `{jid, name?, unread, last_message, last_ts}` | `unread` ou a última mensagem mudou (mensagem nova ou leitura que zera o contador), ou o backfill de nome de `chats.list`/`chat.open` resolveu um nome; `name` só quando conhecido |
 
 Exemplos:
 
