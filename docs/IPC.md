@@ -132,13 +132,16 @@ Estáveis e parte do contrato — clientes podem (e devem) ramificar por `code`.
 | `method_not_found`   | Método não registrado no daemon. | `foo.bar`; método de fase futura |
 | `internal_error`     | Falha interna/`panic` no handler. | bug de handler; resultado não serializável |
 | `not_paired`         | Não há sessão pareada para executar a operação. | `message.send`/`chat.messages` antes do login; `chats.list` sem device |
-| `not_found`          | O recurso pedido não existe localmente. | `chat.open` de um JID desconhecido |
-| `send_failed`        | A operação de rede com o WhatsApp falhou. | `message.send` com a conexão caída; `message.read` recusado |
+| `not_found`          | O recurso pedido não existe localmente. | `chat.open` de um JID desconhecido; `media.download` de um `id` inexistente; `avatars.download` sem foto |
+| `send_failed`        | A operação de rede com o WhatsApp falhou. | `message.send` com a conexão caída; `message.read` recusado; `message.react` recusado |
+| `no_media`           | A mensagem existe mas não tem mídia baixável. | `media.download` de uma mensagem de texto, ou de uma linha `cae_media` sem o proto de download |
+| `download_failed`    | O download dos bytes (mídia/avatar) falhou. | rede/timeout durante `media.download`/`avatars.download` |
 | `no_login_active`    | `auth.cancel` chamado sem login em andamento. | cancelar após o pareamento concluir/expirar |
 
 `parse_error`, `invalid_request` e `method_not_found` são emitidos pela camada
-de protocolo; `not_paired`, `not_found`, `send_failed` e `no_login_active` são
-específicos dos métodos de domínio e também são estáveis.
+de protocolo; `not_paired`, `not_found`, `send_failed`, `no_media`,
+`download_failed` e `no_login_active` são específicos dos métodos de domínio e
+também são estáveis.
 
 O daemon **nunca** derruba o processo por payload inválido. Existe ainda um
 orçamento de erros consecutivos por conexão (padrão: 16, ajustável por
@@ -358,8 +361,9 @@ Response:
 ```
 
 Campos: `jid`, `kind` (`dm`/`group`), `name`, `lastMessage` (preview),
-`timestamp` (**string** de milissegundos; `""` quando desconhecido), `unread`.
-`lastMessageId` aparece quando conhecido.
+`timestamp` (**string** de milissegundos; `""` quando desconhecido), `unread`,
+`avatar` (caminho absoluto do avatar em cache, ou `null`). `lastMessageId`
+aparece quando conhecido.
 
 `name` é resolvido nesta ordem: contato salvo (`cae_contacts` ou o store do
 whatsmeow) → contato do PN/LID alternativo (para `@lid`, o PN obtido de
@@ -373,6 +377,14 @@ identificador cru têm o nome resolvido na leitura, persistido em
 `cae_chats.name` e devolvido já resolvido. Quando o nome muda, um evento
 `chat.updated` é emitido para os demais clientes. A resolução usa apenas o
 store local (sem chamadas de rede) e um cache curto em memória por JID.
+
+O campo `avatar` também é preenchido de forma preguiçosa: se o caminho já está
+em `cae_contacts.avatar_path` (o arquivo existe), ele é devolvido na hora; se
+não, a resposta traz `null` e uma busca em segundo plano agenda o download do
+avatar via `GetProfilePictureInfo`. A busca **nunca bloqueia** a leitura; ao
+terminar com sucesso o daemon emite `chat.updated {jid, avatar}` e passa a
+devolver o caminho. Resultados (inclusive falhas) ficam num cache em memória por
+JID com TTL curto, para não repetir consultas de rede a cada `chats.list`.
 
 ### `chat.open` (fase 2.4)
 
@@ -416,7 +428,31 @@ Response:
       "quotedId": "",
       "edited": false,
       "deleted": false,
-      "status": ""
+      "status": "",
+      "reactions": []
+    },
+    {
+      "id": "3EB0IMG...",
+      "chat": "5511999999999@s.whatsapp.net",
+      "sender": "5511999999999@s.whatsapp.net",
+      "fromMe": false,
+      "timestamp": "1730000000000",
+      "type": "image",
+      "text": "legenda",
+      "quotedId": "",
+      "edited": false,
+      "deleted": false,
+      "status": "",
+      "media": {
+        "kind": "image",
+        "mime": "image/jpeg",
+        "size": 182340,
+        "width": 1280,
+        "height": 960,
+        "downloaded": false,
+        "thumb": null
+      },
+      "reactions": [{"sender": "5511888888888@s.whatsapp.net", "emoji": "👍", "from_me": false}]
     }
   ]
 }
@@ -425,6 +461,12 @@ Response:
 `type` é uma classificação grosseira (`text`, `image`, `video`, `audio`,
 `document`, `sticker`, `location`, `contact`, `reaction`, `protocol`,
 `unknown`). `status` é `sent`/`delivered`/`read` para mensagens enviadas.
+
+Mensagens de mídia ganham um objeto `media` **sem bytes**: `kind`, `mime`,
+`size`, `width`, `height`, `downloaded` (o arquivo já está no cache) e `thumb`
+(caminho absoluto da thumbnail gerada, ou `null`). O download dos bytes é feito
+por `media.download`. Toda mensagem traz também `reactions`, a lista
+`[{"sender","emoji","from_me"}]` das reações atuais (vazia quando não há).
 
 > **Semântica de persistência (persist).**
 >
@@ -499,6 +541,30 @@ Response:
 {"id":15,"result":{"read":2}}
 ```
 
+### `message.react` (fase de mídia/avatares)
+
+Envia uma reação a uma mensagem via `BuildReaction` + `SendMessage`. Um `emoji`
+vazio **remove** a reação do usuário. Erros: `not_paired`, `invalid_request`,
+`not_found` (mensagem/JID), `send_failed`.
+
+Request:
+
+```json
+{"id":17,"method":"message.react","params":{"chat":"5511999999999@s.whatsapp.net","id":"3EB0...","emoji":"👍"}}
+```
+
+Response:
+
+```json
+{"id":17,"result":{"ok":true}}
+```
+
+A reação é persistida em `cae_reactions` (chave `(message_id, sender_jid)`) com
+`sender_jid` = JID do usuário e `from_me=true`, e anunciada por
+`message.updated {chat, id, reaction:{sender, emoji}}`. Reações recebidas de
+outros participantes também entram em `cae_reactions` e aparecem no campo
+`reactions` de `chat.messages`.
+
 ### `contacts.search` (fase 2.4)
 
 Busca contatos locais por `LIKE` sobre JID/nome. `limit` opcional. Os curingas
@@ -522,6 +588,75 @@ Response:
 }
 ```
 
+### `media.download` (fase de mídia/avatares)
+
+Baixa, sob demanda, os bytes de mídia de uma mensagem e devolve apenas
+caminho/metadados (nunca bytes). Usa `DownloadToFile` (streaming) para
+`cache/{images,videos,audio,documents,stickers}/<sha256>.<ext>` (arquivo
+`0600`); para imagem/vídeo/sticker gera também a thumbnail embutida em
+`thumbnails/<sha256>.jpg`. O resultado é persistido em `cae_media`; uma segunda
+chamada devolve o cache (`"cached": true`). Erros: `not_paired`,
+`invalid_request` (sem `chat`/`id`), `not_found` (mensagem inexistente ou de
+outro chat), `no_media` (mensagem sem mídia baixável), `download_failed`.
+
+Request:
+
+```json
+{"id":18,"method":"media.download","params":{"chat":"5511999999999@s.whatsapp.net","id":"3EB0IMG..."}}
+```
+
+Response:
+
+```json
+{
+  "id": 18,
+  "result": {
+    "kind": "image",
+    "mime": "image/jpeg",
+    "size": 182340,
+    "width": 1280,
+    "height": 960,
+    "path": "/home/user/.local/share/caelestia-whatsapp/cache/images/<sha256>.jpg",
+    "thumb": "/home/user/.local/share/caelestia-whatsapp/thumbnails/<sha256>.jpg",
+    "cached": false
+  }
+}
+```
+
+`thumb` é `null` quando a mídia não tem thumbnail (ex.: documento, áudio).
+`cached` é opcional e vale `true` quando o arquivo já estava no cache. Todos os
+caminhos ficam confinados ao data-dir.
+
+### `avatars.download` (fase de mídia/avatares)
+
+Baixa (ou reutiliza) a foto de perfil de um contato/grupo via
+`GetProfilePictureInfo(jid, {Preview:false})` + HTTP, gravando
+`cache/avatars/<sha1>.<ext>` (arquivo `0600`) e persistindo `avatar_path` /
+`avatar_id` em `cae_contacts`. Erros: `not_paired`, `invalid_request` (sem
+`jid`/JID inválido), `not_found` (sem foto), `download_failed`.
+
+Request:
+
+```json
+{"id":19,"method":"avatars.download","params":{"jid":"5511999999999@s.whatsapp.net"}}
+```
+
+Response:
+
+```json
+{
+  "id": 19,
+  "result": {
+    "path": "/home/user/.local/share/caelestia-whatsapp/cache/avatars/<sha1>.jpg",
+    "id": "108...@lid",
+    "cached": false
+  }
+}
+```
+
+O mesmo resultado alimenta o backfill preguiçoso de `chats.list`/`chat.open`
+(que nunca bloqueia) e é anunciado por `chat.updated {jid, avatar}`.
+
 ---
 
 ## 7. Métodos e eventos — status
@@ -531,14 +666,13 @@ tabela congela os nomes para o contrato não mudar quando forem implementados.
 
 Já implementados: `auth.start|status|cancel|logout` e, na fase 2.4,
 `chats.list`, `chat.open`, `chat.messages`, `message.send`, `message.reply`,
-`message.read` e `contacts.search` (ver §6).
+`message.read` e `contacts.search` (ver §6). A fase de mídia/avatares
+implementou `message.react`, `media.download` e `avatars.download` (ver §6).
 
 Métodos restantes (de `ARQUITETURA.md` §3.3):
 
 | Método | Descrição |
 |---|---|
-| `message.react` | reação |
-| `media.download` | baixa mídia para o cache e devolve caminho/metadados |
 | `media.send` | envia mídia a partir de um caminho local |
 | `presence.typing` | envia/atualiza indicador de digitação |
 | `presence.available` | presença do usuário |
@@ -567,9 +701,9 @@ fila ainda são emitidos para os clientes conectados.
 | Evento | `data` | Quando |
 |---|---|---|
 | `message.received` | `{chat, sender, id, text, timestamp, from_me, type}` | mensagem **nova** inserida (entrada ou eco próprio de outro dispositivo) |
-| `message.updated` | `{chat, id, edited?, deleted?}` | `REVOKE` (`deleted:true`) ou `MESSAGE_EDIT` (`edited:true`); o campo que não se aplica é omitido |
+| `message.updated` | `{chat, id, edited?, deleted?, reaction?}` | `REVOKE` (`deleted:true`), `MESSAGE_EDIT` (`edited:true`) ou reação (`reaction:{sender,emoji}`); os campos que não se aplicam são omitidos |
 | `receipt.updated` | `{chat, ids, status}` | recibo (`delivered` ou `read`); `ids` é uma lista de strings |
-| `chat.updated` | `{jid, name?, unread, last_message, last_ts}` | `unread` ou a última mensagem mudou (mensagem nova ou leitura que zera o contador), ou o backfill de nome de `chats.list`/`chat.open` resolveu um nome; `name` só quando conhecido |
+| `chat.updated` | `{jid, name?, unread?, last_message?, last_ts?, avatar?}` | `unread` ou a última mensagem mudou, o backfill de nome de `chats.list`/`chat.open` resolveu um nome, ou o backfill de avatar terminou (`avatar`); os campos ausentes são omitidos |
 
 Exemplos:
 
@@ -577,14 +711,20 @@ Exemplos:
 {"event":"message.received","data":{"chat":"5511999999999@s.whatsapp.net","sender":"5511999999999@s.whatsapp.net","id":"3EB0...","text":"oi","timestamp":"1730000001000","from_me":false,"type":"text"}}
 {"event":"message.updated","data":{"chat":"5511999999999@s.whatsapp.net","id":"3EB0...","deleted":true}}
 {"event":"message.updated","data":{"chat":"5511999999999@s.whatsapp.net","id":"3EB0...","edited":true}}
+{"event":"message.updated","data":{"chat":"5511999999999@s.whatsapp.net","id":"3EB0...","reaction":{"sender":"5511999999999@s.whatsapp.net","emoji":"👍"}}}
 {"event":"receipt.updated","data":{"chat":"5511999999999@s.whatsapp.net","ids":["3EB0..."],"status":"read"}}
 {"event":"chat.updated","data":{"jid":"5511999999999@s.whatsapp.net","name":"Fulano","unread":2,"last_message":"oi","last_ts":"1730000001000"}}
+{"event":"chat.updated","data":{"jid":"5511999999999@s.whatsapp.net","avatar":"/home/user/.local/share/caelestia-whatsapp/cache/avatars/<sha1>.jpg"}}
 ```
 
 `last_message` é o preview exibido na lista de conversas (não o `id`);
-`timestamp` e `last_ts` são strings de milissegundos. Reações e mensagens de
-protocolo que não sejam `REVOKE`/`MESSAGE_EDIT` **não** geram nenhum evento. O
-**history sync** também não emite: é backfill e não mensagem em tempo real.
+`timestamp` e `last_ts` são strings de milissegundos. Reações recebidas de
+outros participantes não criam mensagem nem evento de persistência: entram em
+`cae_reactions` e aparecem no campo `reactions` de `chat.messages`; já uma
+reação **enviada** por `message.react` emite
+`message.updated {reaction}`. Mensagens de protocolo que não sejam
+`REVOKE`/`MESSAGE_EDIT` **não** geram nenhum evento. O **history sync** também
+não emite: é backfill e não mensagem em tempo real.
 
 > Apagar uma mensagem é sinalizado por `message.updated {deleted:true}`; não há
 > um evento `message.deleted` separado (nome unificado no contrato).
@@ -645,6 +785,8 @@ cwctl --socket /tmp/cw.sock status
 cwctl --socket /tmp/cw.sock chats --limit 20
 cwctl --socket /tmp/cw.sock messages '5511999999999@s.whatsapp.net' --limit 50
 cwctl --socket /tmp/cw.sock send '5511999999999@s.whatsapp.net' 'olá!'
+cwctl --socket /tmp/cw.sock avatar '5511999999999@s.whatsapp.net'
+cwctl --socket /tmp/cw.sock media '5511999999999@s.whatsapp.net' '3EB0IMG...'
 ```
 
 Exemplo de cliente Python (UDS, usado no smoke manual):

@@ -83,6 +83,15 @@ Item {
                 onClicked: WhatsAppClient.closeChat()
             }
 
+            ContactAvatar {
+                Layout.alignment: Qt.AlignVCenter
+                visible: root.showChat
+                size: 28
+                name: WhatsAppClient.currentChatName
+                jid: WhatsAppClient.currentChat
+                avatar: WhatsAppClient.currentChatAvatar
+            }
+
             MaterialIcon {
                 visible: !root.showChat
                 text: "forum"

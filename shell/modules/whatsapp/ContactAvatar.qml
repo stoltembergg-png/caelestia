@@ -1,8 +1,9 @@
-// ContactAvatar — avatar circular com fallback de iniciais coloridas.
+// ContactAvatar — avatar circular com imagem real e fallback de iniciais.
 //
-// Nesta fase não há mídia de avatar no IPC: `avatarPath` existe para o futuro e,
-// quando vazio (sempre, por ora), desenhamos as iniciais sobre uma cor estável
-// derivada do JID. Grupos (`@g.us`) usam o ícone de grupo.
+// `avatar` é um caminho de arquivo (sem "file://"); quando vazio, pede o
+// download em background ao WhatsAppClient (uma vez por jid) e aparece assim
+// que o `chat.updated`/resposta chega. Sem mídia, mostra iniciais coloridas
+// (cor estável derivada do JID) ou o ícone de grupo.
 
 pragma ComponentBehavior: Bound
 
@@ -10,13 +11,14 @@ import QtQuick
 import Caelestia.Config
 import qs.components
 import qs.services
+import qs.extras.whatsapp
 
 Item {
     id: root
 
     property string name: ""
     property string jid: ""
-    property string avatarPath: ""
+    property string avatar: ""
     property real size: 44
 
     readonly property bool isGroup: root.jid.indexOf("@g.us") >= 0
@@ -53,38 +55,54 @@ Item {
         return String(base).substring(0, 2).toUpperCase();
     }
 
+    function _maybeRequest(): void {
+        if (!root.avatar.length && root.jid.length)
+            WhatsAppClient.requestAvatar(root.jid);
+    }
+
+    onJidChanged: root._maybeRequest()
+    Component.onCompleted: root._maybeRequest()
+
     implicitWidth: root.size
     implicitHeight: root.size
 
-    StyledRect {
+    // ClippingRectangle arredondado: recorta a imagem no círculo sem custo de
+    // MultiEffect por avatar.
+    StyledClippingRect {
         anchors.fill: parent
         radius: width / 2
-        color: root._background
-    }
+        color: "transparent"
 
-    Image {
-        anchors.fill: parent
-        visible: root._imageOk
-        source: root.avatarPath ? "file://" + root.avatarPath : ""
-        fillMode: Image.PreserveAspectCrop
-        asynchronous: true
-        sourceSize: Qt.size(root.size, root.size)
-        onStatusChanged: root._imageOk = (status === Image.Ready)
-    }
+        StyledRect {
+            anchors.fill: parent
+            color: root._background
+        }
 
-    MaterialIcon {
-        anchors.centerIn: parent
-        visible: !root._imageOk && root.isGroup
-        text: "group"
-        color: Colours.on(root._background)
-        fontStyle: Tokens.font.icon.medium
-    }
+        Image {
+            anchors.fill: parent
+            visible: root._imageOk
+            source: root.avatar ? "file://" + root.avatar : ""
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            cache: true
+            sourceSize: Qt.size(root.size * 2, root.size * 2)
+            onStatusChanged: root._imageOk = (status === Image.Ready)
+        }
 
-    StyledText {
-        anchors.centerIn: parent
-        visible: !root._imageOk && !root.isGroup
-        text: root.initials()
-        color: Colours.on(root._background)
-        font: Tokens.font.title.small
+        MaterialIcon {
+            anchors.centerIn: parent
+            visible: !root._imageOk && root.isGroup
+            text: "group"
+            color: Colours.on(root._background)
+            fontStyle: Tokens.font.icon.medium
+        }
+
+        StyledText {
+            anchors.centerIn: parent
+            visible: !root._imageOk && !root.isGroup
+            text: root.initials()
+            color: Colours.on(root._background)
+            font: Tokens.font.title.small
+        }
     }
 }

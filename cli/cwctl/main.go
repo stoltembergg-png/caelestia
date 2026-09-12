@@ -56,6 +56,10 @@ func run(args []string) error {
 		return cmdMessages(socket, cmdArgs)
 	case "send":
 		return cmdSend(socket, cmdArgs)
+	case "avatar":
+		return cmdAvatar(socket, cmdArgs)
+	case "media":
+		return cmdMedia(socket, cmdArgs)
 	case "login":
 		return cmdLogin(socket, cmdArgs)
 	case "logout":
@@ -107,6 +111,8 @@ Comandos:
   chats [--limit N]          lista de conversas
   messages <jid> [--limit N] histórico recente de uma conversa
   send <jid> <texto>         envia uma mensagem de texto
+  avatar <jid>               baixa o avatar e imprime o caminho
+  media <jid> <id>           baixa a mídia de uma mensagem e imprime o caminho
   login [--timeout 2m]       pareia via QR (imprime o QR no terminal)
   logout                     desvincula o dispositivo
 
@@ -209,6 +215,15 @@ type messageInfo struct {
 	Type      string `json:"type"`
 	Text      string `json:"text"`
 	Status    string `json:"status"`
+	Media     *struct {
+		Kind       string  `json:"kind"`
+		Mime       string  `json:"mime"`
+		Size       int64   `json:"size"`
+		Width      int     `json:"width"`
+		Height     int     `json:"height"`
+		Downloaded bool    `json:"downloaded"`
+		Thumb      *string `json:"thumb"`
+	} `json:"media"`
 }
 
 func cmdMessages(socket string, args []string) error {
@@ -258,7 +273,14 @@ func printMessage(m messageInfo) {
 	if m.Status != "" {
 		status = " (" + m.Status + ")"
 	}
-	fmt.Printf("%s %s %s%s\n", ts, who, text, status)
+	media := ""
+	if m.Media != nil {
+		media = " media=" + m.Media.Kind
+		if m.Media.Downloaded {
+			media += " downloaded"
+		}
+	}
+	fmt.Printf("%s %s id=%s %s%s%s\n", ts, who, m.ID, text, status, media)
 }
 
 func cmdSend(socket string, args []string) error {
@@ -282,6 +304,67 @@ func cmdSend(socket string, args []string) error {
 		return err
 	}
 	fmt.Printf("sent id=%s timestamp=%s\n", res.ID, res.Timestamp)
+	return nil
+}
+
+// cmdAvatar downloads (or reuses) a chat/contact avatar and prints its path.
+func cmdAvatar(socket string, args []string) error {
+	if len(args) < 1 {
+		return errors.New("usage: cwctl avatar <jid>")
+	}
+	jid := args[0]
+
+	c, err := dial(socket)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	var res struct {
+		Path   string `json:"path"`
+		ID     string `json:"id"`
+		Cached bool   `json:"cached"`
+	}
+	if err := c.Call("avatars.download", map[string]any{"jid": jid}, 60*time.Second, &res); err != nil {
+		return err
+	}
+	fmt.Printf("path=%s id=%s cached=%t\n", res.Path, res.ID, res.Cached)
+	return nil
+}
+
+// cmdMedia downloads a message's media (streaming to the daemon cache) and
+// prints the resulting paths/metadata. Bytes never travel over the socket.
+func cmdMedia(socket string, args []string) error {
+	if len(args) < 2 {
+		return errors.New("usage: cwctl media <jid> <id>")
+	}
+	chat, id := args[0], args[1]
+
+	c, err := dial(socket)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	var res struct {
+		Kind   string  `json:"kind"`
+		Mime   string  `json:"mime"`
+		Size   int64   `json:"size"`
+		Width  int     `json:"width"`
+		Height int     `json:"height"`
+		Path   string  `json:"path"`
+		Thumb  *string `json:"thumb"`
+		Cached bool    `json:"cached"`
+	}
+	if err := c.Call("media.download", map[string]any{"chat": chat, "id": id}, 3*time.Minute, &res); err != nil {
+		return err
+	}
+	thumb := "-"
+	if res.Thumb != nil {
+		thumb = *res.Thumb
+	}
+	fmt.Printf("path=%s kind=%s mime=%s size=%d %dx%d thumb=%s cached=%t\n",
+		res.Path, res.Kind, res.Mime, res.Size, res.Width, res.Height, thumb, res.Cached)
 	return nil
 }
 

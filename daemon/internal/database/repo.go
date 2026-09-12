@@ -146,6 +146,28 @@ type MessageRef struct {
 	SenderJID string
 }
 
+// Media is a row of cae_media. The bytes always live on disk (Path); Proto
+// carries the marshaled protobuf sub-message with the download keys so
+// media.download can reconstruct the operation without keeping bytes in the
+// database visible to readers. Width/Height/ThumbPath/Filename are exposed over
+// IPC.
+type Media struct {
+	ID           string
+	MessageID    string
+	Kind         string
+	Mime         string
+	Size         int64
+	Path         string
+	SHA256       string
+	Status       string
+	DownloadedAt int64
+	Width        int
+	Height       int
+	ThumbPath    string
+	Filename     string
+	Proto        []byte
+}
+
 // normalizeLimit clamps a caller-supplied limit into [1, MaxListLimit].
 func normalizeLimit(limit int) int {
 	if limit <= 0 {
@@ -718,6 +740,158 @@ func (r *Repo) ListReactions(ctx context.Context, messageID string) ([]Reaction,
 	return reactions, nil
 }
 
+// UpsertMedia inserts or refines the metadata of a media message. The download
+// state (path, sha256, status, downloaded_at, thumb_path) is never clobbered
+// here: it is owned by MarkMediaDownloaded, so a re-persisted message cannot
+// make an already cached file look absent.
+func (r *Repo) UpsertMedia(ctx context.Context, m Media) error {
+	if m.ID == "" {
+		return errors.New("database: upsert media: empty id")
+	}
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO cae_media
+			(id, message_id, kind, mime, size, width, height, filename, proto)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET
+			message_id = CASE WHEN excluded.message_id <> '' THEN excluded.message_id ELSE cae_media.message_id END,
+			kind       = CASE WHEN excluded.kind <> '' THEN excluded.kind ELSE cae_media.kind END,
+			mime       = CASE WHEN excluded.mime <> '' THEN excluded.mime ELSE cae_media.mime END,
+			size       = CASE WHEN excluded.size > 0 THEN excluded.size ELSE cae_media.size END,
+			width      = CASE WHEN excluded.width > 0 THEN excluded.width ELSE cae_media.width END,
+			height     = CASE WHEN excluded.height > 0 THEN excluded.height ELSE cae_media.height END,
+			filename   = CASE WHEN excluded.filename IS NOT NULL THEN excluded.filename ELSE cae_media.filename END,
+			proto      = CASE WHEN excluded.proto IS NOT NULL THEN excluded.proto ELSE cae_media.proto END`,
+		m.ID, nullString(m.MessageID), nullString(m.Kind), nullString(m.Mime),
+		nullInt64(m.Size), m.Width, m.Height,
+		nullString(m.Filename), nullBytes(m.Proto),
+	)
+	if err != nil {
+		return fmt.Errorf("database: upsert media %q: %w", m.ID, err)
+	}
+	return nil
+}
+
+const mediaSelect = `
+	SELECT id, COALESCE(message_id, ''), COALESCE(kind, ''), COALESCE(mime, ''),
+	       COALESCE(size, 0), COALESCE(path, ''), COALESCE(sha256, ''),
+	       COALESCE(status, ''), COALESCE(downloaded_at, 0),
+	       COALESCE(width, 0), COALESCE(height, 0), COALESCE(thumb_path, ''),
+	       COALESCE(filename, '')`
+
+func scanMedia(s rowScanner) (*Media, error) {
+	var m Media
+	if err := s.Scan(
+		&m.ID, &m.MessageID, &m.Kind, &m.Mime, &m.Size, &m.Path, &m.SHA256,
+		&m.Status, &m.DownloadedAt, &m.Width, &m.Height, &m.ThumbPath, &m.Filename,
+	); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// GetMedia returns the media metadata (including the download proto) of a
+// message, or ErrNotFound.
+func (r *Repo) GetMedia(ctx context.Context, messageID string) (*Media, error) {
+	var m Media
+	err := r.db.QueryRowContext(ctx,
+		mediaSelect+`, COALESCE(proto, X'') FROM cae_media WHERE message_id = ?`, messageID).
+		Scan(&m.ID, &m.MessageID, &m.Kind, &m.Mime, &m.Size, &m.Path, &m.SHA256,
+			&m.Status, &m.DownloadedAt, &m.Width, &m.Height, &m.ThumbPath, &m.Filename, &m.Proto)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("database: get media %q: %w", messageID, err)
+	}
+	return &m, nil
+}
+
+// MediaForMessages returns the media metadata (without the download proto) for
+// the given message ids, keyed by message id. It is used by chat.messages so a
+// page never performs one query per message.
+func (r *Repo) MediaForMessages(ctx context.Context, messageIDs []string) (map[string]Media, error) {
+	out := make(map[string]Media)
+	if len(messageIDs) == 0 {
+		return out, nil
+	}
+	args := make([]any, 0, len(messageIDs))
+	for _, id := range messageIDs {
+		args = append(args, id)
+	}
+	rows, err := r.db.QueryContext(ctx,
+		mediaSelect+` FROM cae_media WHERE message_id IN (`+placeholders(len(messageIDs))+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("database: list media: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		m, err := scanMedia(rows)
+		if err != nil {
+			return nil, fmt.Errorf("database: scan media: %w", err)
+		}
+		out[m.MessageID] = *m
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("database: iterate media: %w", err)
+	}
+	return out, nil
+}
+
+// MarkMediaDownloaded records that the media bytes were cached on disk. An
+// empty thumbPath preserves a previously stored thumbnail.
+func (r *Repo) MarkMediaDownloaded(ctx context.Context, messageID, path, sha256, thumbPath string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE cae_media SET
+			path = ?, sha256 = ?, status = 'done', downloaded_at = unixepoch(),
+			thumb_path = CASE WHEN ? <> '' THEN ? ELSE thumb_path END
+		WHERE message_id = ?`,
+		path, sha256, thumbPath, thumbPath, messageID,
+	)
+	if err != nil {
+		return fmt.Errorf("database: mark media downloaded %q: %w", messageID, err)
+	}
+	return nil
+}
+
+// ListReactionsForMessages returns the current reactions of every given message
+// id, grouped by message id and ordered by sender. It backs the "reactions"
+// array of chat.messages without a query per message.
+func (r *Repo) ListReactionsForMessages(ctx context.Context, messageIDs []string) (map[string][]Reaction, error) {
+	out := make(map[string][]Reaction)
+	if len(messageIDs) == 0 {
+		return out, nil
+	}
+	args := make([]any, 0, len(messageIDs))
+	for _, id := range messageIDs {
+		args = append(args, id)
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT message_id, COALESCE(chat_jid, ''), sender_jid, emoji, from_me, timestamp
+		FROM cae_reactions WHERE message_id IN (`+placeholders(len(messageIDs))+`)
+		ORDER BY message_id, sender_jid`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("database: list reactions for messages: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			x      Reaction
+			fromMe int
+		)
+		if err := rows.Scan(&x.MessageID, &x.ChatJID, &x.SenderJID, &x.Emoji, &fromMe, &x.Timestamp); err != nil {
+			return nil, fmt.Errorf("database: scan reaction: %w", err)
+		}
+		x.FromMe = fromMe != 0
+		out[x.MessageID] = append(out[x.MessageID], x)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("database: iterate reactions: %w", err)
+	}
+	return out, nil
+}
+
 // UnreadTotal returns the sum of unread_count across all chats.
 func (r *Repo) UnreadTotal(ctx context.Context) (int, error) {
 	var total int
@@ -772,4 +946,21 @@ func nullString(s string) any {
 		return nil
 	}
 	return s
+}
+
+// nullInt64 maps 0 to NULL so an unchanged numeric column is not clobbered by
+// an upsert (COALESCE/IS NOT NULL checks in the ON CONFLICT clause).
+func nullInt64(n int64) any {
+	if n == 0 {
+		return nil
+	}
+	return n
+}
+
+// nullBytes maps an empty slice to NULL so an upsert preserves a stored proto.
+func nullBytes(b []byte) any {
+	if len(b) == 0 {
+		return nil
+	}
+	return b
 }

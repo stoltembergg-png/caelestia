@@ -11,18 +11,20 @@ import (
 	"time"
 
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waWeb"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/database"
 	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/ipc"
 )
 
-// methodFake extends fakeClient with the outbound/parse surface required by
-// the fullClient interface.
+// methodFake extends fakeClient with the outbound/parse/media surface required
+// by the fullClient interface.
 type methodFake struct {
 	*fakeClient
 
@@ -32,6 +34,13 @@ type methodFake struct {
 	sentMsg   *waE2E.Message
 	markCalls int
 	markErr   error
+
+	avatarInfo  *types.ProfilePictureInfo
+	avatarErr   error
+	avatarCalls int
+
+	downloadData []byte
+	downloadErr  error
 }
 
 func (f *methodFake) SendMessage(_ context.Context, to types.JID, message *waE2E.Message, _ ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
@@ -47,6 +56,40 @@ func (f *methodFake) MarkRead(_ context.Context, _ []types.MessageID, _ time.Tim
 
 func (f *methodFake) ParseWebMessage(types.JID, *waWeb.WebMessageInfo) (*events.Message, error) {
 	return nil, errors.New("not implemented in fake")
+}
+
+func (f *methodFake) GetProfilePictureInfo(_ context.Context, _ types.JID, _ *whatsmeow.GetProfilePictureParams) (*types.ProfilePictureInfo, error) {
+	f.mu.Lock()
+	f.avatarCalls++
+	f.mu.Unlock()
+	return f.avatarInfo, f.avatarErr
+}
+
+// avatarCallCount returns how many profile-picture lookups the fake served.
+func (f *methodFake) avatarCallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.avatarCalls
+}
+
+func (f *methodFake) DownloadToFile(_ context.Context, _ whatsmeow.DownloadableMessage, file whatsmeow.File) error {
+	if f.downloadErr != nil {
+		return f.downloadErr
+	}
+	_, err := file.Write(f.downloadData)
+	return err
+}
+
+func (f *methodFake) BuildReaction(chat, sender types.JID, id types.MessageID, reaction string) *waE2E.Message {
+	return &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{
+		Key: &waCommon.MessageKey{
+			RemoteJID:   proto.String(chat.String()),
+			FromMe:      proto.Bool(true),
+			ID:          proto.String(string(id)),
+			Participant: proto.String(sender.String()),
+		},
+		Text: proto.String(reaction),
+	}}
 }
 
 func newTestMethods(t *testing.T) (*Methods, *Service, *methodFake, *database.Repo, context.Context) {
@@ -65,7 +108,8 @@ func newTestMethods(t *testing.T) (*Methods, *Service, *methodFake, *database.Re
 	jid := types.NewJID("5511999999999", types.DefaultUserServer)
 	setDevice(svc, &store.Device{ID: &jid})
 
-	db, err := database.Open(filepath.Join(t.TempDir(), "whatsapp.db"))
+	dir := t.TempDir()
+	db, err := database.Open(filepath.Join(dir, "whatsapp.db"))
 	if err != nil {
 		t.Fatalf("database.Open: %v", err)
 	}
@@ -73,7 +117,7 @@ func newTestMethods(t *testing.T) (*Methods, *Service, *methodFake, *database.Re
 	repo := database.NewRepo(db)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewMethods(svc, repo, logger), svc, mf, repo, context.Background()
+	return NewMethods(svc, repo, dir, logger), svc, mf, repo, context.Background()
 }
 
 func TestChatsListReturnsOrderedData(t *testing.T) {

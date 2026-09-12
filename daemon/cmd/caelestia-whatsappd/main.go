@@ -177,7 +177,7 @@ func run(args []string) error {
 // registerHandlers installs the ping/status/auth methods and the
 // chats/messages/contacts method set.
 func registerHandlers(s *ipc.Server, svc *whatsapp.Service, repo *database.Repo, cfg *config.Config, logger *slog.Logger, startedAt time.Time) {
-	whatsapp.NewMethods(svc, repo, logger).Register(s)
+	whatsapp.NewMethods(svc, repo, cfg.DataDir, logger).Register(s)
 
 	s.Register("ping", func(_ context.Context, _ *ipc.Client, _ json.RawMessage) (any, *ipc.Error) {
 		return map[string]any{"pong": true, "version": version}, nil

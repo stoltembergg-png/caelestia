@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -30,25 +31,49 @@ const (
 	CodeInvalidRequest = "invalid_request"
 	// CodeSendFailed means the outbound WhatsApp operation failed.
 	CodeSendFailed = "send_failed"
+	// CodeNoMedia means the message exists but carries no downloadable media.
+	CodeNoMedia = "no_media"
+	// CodeDownloadFailed means fetching media/avatar bytes failed.
+	CodeDownloadFailed = "download_failed"
 )
 
 // sendTimeout bounds a single outbound WhatsApp operation.
 const sendTimeout = 30 * time.Second
 
-// Methods implements the chats/messages/contacts IPC methods on top of the
-// repository and the whatsmeow service. It is registered by main.go.
+// mediaDownloadTimeout bounds a single media download (streaming to disk).
+const mediaDownloadTimeout = 2 * time.Minute
+
+// Methods implements the chats/messages/contacts/media/avatar IPC methods on
+// top of the repository and the whatsmeow service. It is registered by main.go.
 type Methods struct {
 	svc    *Service
 	repo   *database.Repo
 	logger *slog.Logger
+
+	// Data/cache roots. Every path handed back over IPC is built by joining a
+	// hashed file name to one of these, never from client input.
+	dataDir  string
+	cacheDir string
+	thumbDir string
+
+	avatars *avatarStore
 }
 
-// NewMethods builds the method set. svc and repo must be non-nil.
-func NewMethods(svc *Service, repo *database.Repo, logger *slog.Logger) *Methods {
+// NewMethods builds the method set. svc, repo and dataDir must be non-nil.
+func NewMethods(svc *Service, repo *database.Repo, dataDir string, logger *slog.Logger) *Methods {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Methods{svc: svc, repo: repo, logger: logger}
+	m := &Methods{
+		svc:      svc,
+		repo:     repo,
+		logger:   logger,
+		dataDir:  dataDir,
+		cacheDir: filepath.Join(dataDir, "cache"),
+		thumbDir: filepath.Join(dataDir, "thumbnails"),
+	}
+	m.avatars = newAvatarStore(repo, svc, logger, filepath.Join(m.cacheDir, "avatars"))
+	return m
 }
 
 // Register installs every method on the IPC server.
@@ -59,7 +84,10 @@ func (m *Methods) Register(s *ipc.Server) {
 	s.Register("message.send", wrap(m.MessageSend))
 	s.Register("message.reply", wrap(m.MessageReply))
 	s.Register("message.read", wrap(m.MessageRead))
+	s.Register("message.react", wrap(m.MessageReact))
 	s.Register("contacts.search", wrap(m.ContactsSearch))
+	s.Register("avatars.download", wrap(m.AvatarsDownload))
+	s.Register("media.download", wrap(m.MediaDownload))
 }
 
 // methodFunc is the testable shape of a handler (without the *ipc.Client).
@@ -155,7 +183,11 @@ func (m *Methods) ChatsList(ctx context.Context, params json.RawMessage) (any, *
 		// raw @lid by an older build) is resolved on read, persisted and then
 		// returned. The resolver's short-lived cache keeps repeated calls cheap.
 		c.Name = m.backfillChatName(ctx, &c)
-		out = append(out, chatPayload(c))
+		// Avatar backfill is also lazy, but never blocks: a cached path is
+		// returned immediately and a miss schedules a background fetch that
+		// emits chat.updated when it completes.
+		avatar := m.avatars.backfill(ctx, c.JID)
+		out = append(out, chatPayload(c, avatar))
 	}
 	return out, nil
 }
@@ -232,7 +264,7 @@ func (m *Methods) ChatOpen(ctx context.Context, params json.RawMessage) (any, *i
 		return nil, internalError(err)
 	}
 	c.Name = m.backfillChatName(ctx, c)
-	return chatPayload(*c), nil
+	return chatPayload(*c, m.avatars.backfill(ctx, c.JID)), nil
 }
 
 // --- chat.messages ---
@@ -259,9 +291,27 @@ func (m *Methods) ChatMessages(ctx context.Context, params json.RawMessage) (any
 	if err != nil {
 		return nil, internalError(err)
 	}
+	ids := make([]string, 0, len(msgs))
+	for i := range msgs {
+		ids = append(ids, msgs[i].ID)
+	}
+	// Two batched lookups instead of one query per message: media metadata and
+	// current reactions. Neither carries bytes.
+	media, err := m.repo.MediaForMessages(ctx, ids)
+	if err != nil {
+		return nil, internalError(err)
+	}
+	reactions, err := m.repo.ListReactionsForMessages(ctx, ids)
+	if err != nil {
+		return nil, internalError(err)
+	}
 	out := make([]map[string]any, 0, len(msgs))
 	for _, msg := range msgs {
-		out = append(out, messagePayload(msg))
+		var md *database.Media
+		if row, ok := media[msg.ID]; ok {
+			md = &row
+		}
+		out = append(out, messagePayload(msg, md, reactions[msg.ID]))
 	}
 	return out, nil
 }
@@ -473,7 +523,7 @@ func (m *Methods) ContactsSearch(ctx context.Context, params json.RawMessage) (a
 
 // --- payload helpers ---
 
-func chatPayload(c database.Chat) map[string]any {
+func chatPayload(c database.Chat, avatar string) map[string]any {
 	name := c.Name
 	if name == "" {
 		name = c.JID
@@ -484,6 +534,10 @@ func chatPayload(c database.Chat) map[string]any {
 		"name":        name,
 		"lastMessage": c.LastPreview,
 		"unread":      c.UnreadCount,
+		"avatar":      nil,
+	}
+	if avatar != "" {
+		out["avatar"] = avatar
 	}
 	if c.LastMessageTS > 0 {
 		out["timestamp"] = ipc.StringTimestamp(c.LastMessageTS)
@@ -496,8 +550,8 @@ func chatPayload(c database.Chat) map[string]any {
 	return out
 }
 
-func messagePayload(m database.Message) map[string]any {
-	return map[string]any{
+func messagePayload(m database.Message, media *database.Media, reactions []database.Reaction) map[string]any {
+	out := map[string]any{
 		"id":        m.ID,
 		"chat":      m.ChatJID,
 		"sender":    m.SenderJID,
@@ -509,7 +563,47 @@ func messagePayload(m database.Message) map[string]any {
 		"edited":    m.Edited,
 		"deleted":   m.Deleted,
 		"status":    m.Status,
+		"reactions": reactionPayloads(reactions),
 	}
+	if media != nil {
+		out["media"] = mediaPayload(media)
+	}
+	return out
+}
+
+// mediaPayload builds the IPC view of a media row. It never includes bytes: only
+// metadata plus the on-disk paths (null thumb when not generated).
+func mediaPayload(md *database.Media) map[string]any {
+	if md == nil {
+		return nil
+	}
+	var thumb any
+	if md.ThumbPath != "" && fileExists(md.ThumbPath) {
+		thumb = md.ThumbPath
+	}
+	return map[string]any{
+		"kind":       md.Kind,
+		"mime":       md.Mime,
+		"size":       md.Size,
+		"width":      md.Width,
+		"height":     md.Height,
+		"downloaded": md.Status == "done" && fileExists(md.Path),
+		"thumb":      thumb,
+	}
+}
+
+// reactionPayloads renders the current reactions of a message as
+// [{"sender","emoji","from_me"}]. It always returns a non-nil slice.
+func reactionPayloads(reactions []database.Reaction) []map[string]any {
+	out := make([]map[string]any, 0, len(reactions))
+	for _, r := range reactions {
+		out = append(out, map[string]any{
+			"sender":  r.SenderJID,
+			"emoji":   r.Emoji,
+			"from_me": r.FromMe,
+		})
+	}
+	return out
 }
 
 func contactPayload(c database.Contact) map[string]any {

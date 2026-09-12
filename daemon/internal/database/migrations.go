@@ -167,6 +167,24 @@ var migrations = []migration{
 				ON cae_reactions (chat_jid)`,
 		},
 	},
+	{
+		// Additive migration: media metadata is enriched with everything
+		// needed to download and cache the bytes later. The download needs the
+		// original protobuf sub-message (direct path + keys), so it is stored
+		// as a BLOB; the bytes themselves are never in the database. width/
+		// height/thumb_path/filename are exposed over IPC (see docs/IPC.md §6).
+		version: 3,
+		name:    "media download metadata",
+		statements: []string{
+			`ALTER TABLE cae_media ADD COLUMN width INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE cae_media ADD COLUMN height INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE cae_media ADD COLUMN thumb_path TEXT`,
+			`ALTER TABLE cae_media ADD COLUMN filename TEXT`,
+			`ALTER TABLE cae_media ADD COLUMN proto BLOB`,
+			`CREATE INDEX IF NOT EXISTS idx_cae_media_message
+				ON cae_media (message_id)`,
+		},
+	},
 }
 
 // Migrate applies every pending migration exactly once. It is safe to call

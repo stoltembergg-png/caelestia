@@ -9,6 +9,8 @@ WhatsAppPanel 1.0 modules/whatsapp/WhatsAppPanel.qml
 ChatList 1.0 modules/whatsapp/ChatList.qml
 ChatView 1.0 modules/whatsapp/ChatView.qml
 MessageBubble 1.0 modules/whatsapp/MessageBubble.qml
+MediaContent 1.0 modules/whatsapp/MediaContent.qml
+MessageContextMenu 1.0 modules/whatsapp/MessageContextMenu.qml
 MessageComposer 1.0 modules/whatsapp/MessageComposer.qml
 ContactAvatar 1.0 modules/whatsapp/ContactAvatar.qml
 LoginView 1.0 modules/whatsapp/LoginView.qml

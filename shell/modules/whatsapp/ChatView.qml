@@ -2,7 +2,8 @@
 //
 // O modelo (WhatsAppClient.messages) já chega em ordem cronológica (antigo ->
 // recente). Rolamos para o fim a cada mensagem nova; o read é disparado pelo
-// serviço ao abrir e ao receber.
+// serviço ao abrir e ao receber. Um menu de contexto por clique direito/long
+// press permite responder e reagir.
 
 pragma ComponentBehavior: Bound
 
@@ -48,9 +49,13 @@ Item {
                         required property string type
                         required property string text
                         required property string quotedId
+                        required property string quotedText
+                        required property bool quotedFromMe
                         required property bool edited
                         required property bool deleted
                         required property string status
+                        required property var media
+                        required property string reactions
 
                         width: ListView.view ? ListView.view.width : 0
                         height: bubble.implicitHeight
@@ -68,9 +73,15 @@ Item {
                             type: wrapper.type
                             text: wrapper.text
                             quotedId: wrapper.quotedId
+                            quotedText: wrapper.quotedText
+                            quotedFromMe: wrapper.quotedFromMe
                             edited: wrapper.edited
                             deleted: wrapper.deleted
                             status: wrapper.status
+                            media: wrapper.media
+                            reactions: wrapper.reactions
+
+                            onContextRequested: contextMenu.openFor(bubble, wrapper.messageId, wrapper.chat, wrapper.fromMe)
                         }
                     }
                 }
@@ -102,6 +113,13 @@ Item {
         MessageComposer {
             Layout.fillWidth: true
         }
+    }
+
+    MessageContextMenu {
+        id: contextMenu
+
+        onReplyRequested: (chat, messageId, fromMe) => WhatsAppClient.beginReply(chat, messageId, fromMe)
+        onReactRequested: (chat, messageId, emoji) => WhatsAppClient.react(chat, messageId, emoji)
     }
 
     Connections {

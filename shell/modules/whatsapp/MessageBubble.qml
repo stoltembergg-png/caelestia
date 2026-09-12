@@ -1,8 +1,8 @@
 // MessageBubble — balão de mensagem (entrada à esquerda, saída à direita).
 //
-// Cores/raios vêm dos tokens do shell; cantos inferiores assimétricos marcam o
-// lado do remetente. Tipos não-texto (mídia futura) aparecem como rótulo com
-// ícone. Timestamps são strings de milissegundos — usados só para formatar.
+// Suporta texto, mídia (delegada ao MediaContent), citação (quote) e chips de
+// reação. Clique direito/long-press pede o menu de contexto (responder/emoji)
+// via o sinal `contextRequested`. Cores/raios dos tokens do shell.
 
 pragma ComponentBehavior: Bound
 
@@ -11,6 +11,7 @@ import QtQuick.Layouts
 import Caelestia.Config
 import qs.components
 import qs.services
+import qs.extras.whatsapp
 
 Item {
     id: root
@@ -23,11 +24,22 @@ Item {
     property string type: "text"
     property string text: ""
     property string quotedId: ""
+    property string quotedText: ""
+    property bool quotedFromMe: false
     property bool edited: false
     property bool deleted: false
     property string status: ""
+    property var media: null
+    property string reactions: ""
+
+    signal contextRequested()
+
+    readonly property var _reactions: WhatsAppClient.reactionsOf(root.reactions)
 
     readonly property bool isText: root.type === "text" || root.type === "protocol"
+    readonly property bool isMedia: root.type === "image" || root.type === "video" || root.type === "audio" || root.type === "document" || root.type === "sticker"
+    readonly property bool isOtherType: !root.isText && !root.isMedia
+    readonly property bool showCaption: (root.type === "image" || root.type === "video" || root.type === "sticker") && root.text.length > 0
     readonly property real maxWidth: Math.max(160, root.width * 0.8)
 
     function timeText(): string {
@@ -44,11 +56,6 @@ Item {
 
     function typeIcon(): string {
         const icons = {
-            "image": "image",
-            "video": "videocam",
-            "audio": "mic",
-            "document": "description",
-            "sticker": "sticky_note_2",
             "location": "location_on",
             "contact": "person",
             "unknown": "help"
@@ -58,11 +65,6 @@ Item {
 
     function typeLabel(): string {
         const labels = {
-            "image": "Foto",
-            "video": "Vídeo",
-            "audio": "Áudio",
-            "document": "Documento",
-            "sticker": "Figurinha",
             "location": "Localização",
             "contact": "Contato",
             "unknown": "Mensagem"
@@ -76,7 +78,45 @@ Item {
         return "done";
     }
 
+    // Reações agrupadas por emoji (contagem + se é minha).
+    function groupedReactions(): var {
+        const map = ({});
+        const order = [];
+        const list = root._reactions;
+        for (let i = 0; i < list.length; i++) {
+            const e = String(list[i].emoji || "");
+            if (!e.length)
+                continue;
+            if (!map[e]) {
+                map[e] = {
+                    "emoji": e,
+                    "count": 0,
+                    "mine": false
+                };
+                order.push(e);
+            }
+            map[e].count++;
+            if (list[i].fromMe === true)
+                map[e].mine = true;
+        }
+        return order.map(function (e) {
+            return map[e];
+        });
+    }
+
     implicitHeight: bubble.implicitHeight
+
+    // Contexto (clique direito / long-press). Fica atrás do conteúdo para não
+    // roubar o clique da mídia.
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        onPressAndHold: root.contextRequested()
+        onClicked: mouse => {
+            if (mouse.button === Qt.RightButton)
+                root.contextRequested();
+        }
+    }
 
     StyledRect {
         id: bubble
@@ -97,11 +137,70 @@ Item {
             x: Tokens.padding.medium
             y: Tokens.padding.small
             width: bubble.width - Tokens.padding.medium * 2
-            spacing: 2
+            spacing: Tokens.spacing.extraSmall
 
+            // Citação
+            StyledClippingRect {
+                Layout.fillWidth: true
+                visible: root.quotedId.length > 0
+                implicitHeight: quoteCol.implicitHeight + Tokens.spacing.small
+                radius: Tokens.rounding.small
+                color: root.fromMe ? Qt.alpha(Colours.palette.m3onPrimaryContainer, 0.14) : Colours.tPalette.m3surfaceContainerHighest
+
+                StyledRect {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: 2
+                    color: root.fromMe ? Colours.palette.m3onPrimaryContainer : Colours.palette.m3primary
+                }
+
+                Column {
+                    id: quoteCol
+
+                    anchors.left: parent.left
+                    anchors.leftMargin: Tokens.spacing.small
+                    anchors.right: parent.right
+                    anchors.rightMargin: Tokens.spacing.extraSmall
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 0
+
+                    StyledText {
+                        width: parent.width
+                        text: root.quotedFromMe ? "Você" : WhatsAppClient._chatName(root.chat)
+                        color: root.fromMe ? Colours.palette.m3onPrimaryContainer : Colours.palette.m3primary
+                        font: Tokens.font.label.small
+                        elide: Text.ElideRight
+                        maximumLineCount: 1
+                    }
+
+                    StyledText {
+                        width: parent.width
+                        text: root.quotedText.length > 0 ? root.quotedText : "Mensagem citada"
+                        color: root.fromMe ? Qt.alpha(Colours.palette.m3onPrimaryContainer, 0.85) : Colours.palette.m3onSurfaceVariant
+                        font: Tokens.font.body.small
+                        elide: Text.ElideRight
+                        maximumLineCount: 1
+                    }
+                }
+            }
+
+            // Mídia
+            MediaContent {
+                Layout.fillWidth: false
+                visible: root.isMedia
+                chat: root.chat
+                messageId: root.messageId
+                type: root.type
+                text: root.text
+                media: root.media
+                fromMe: root.fromMe
+            }
+
+            // Tipos simples (localização/contato)
             RowLayout {
                 Layout.fillWidth: true
-                visible: !root.isText && !root.deleted
+                visible: root.isOtherType && !root.deleted
                 spacing: Tokens.spacing.extraSmall
 
                 MaterialIcon {
@@ -114,9 +213,10 @@ Item {
                 StyledText {
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignVCenter
-                    text: root.typeLabel()
+                    text: root.text.length > 0 ? root.text : root.typeLabel()
                     color: root.fromMe ? Colours.palette.m3onPrimaryContainer : Colours.palette.m3onSurface
                     font: Tokens.font.body.small
+                    elide: Text.ElideRight
                 }
             }
 
@@ -128,6 +228,17 @@ Item {
                 font: root.deleted ? Tokens.font.body.builders.small.italic(true).build() : Tokens.font.body.small
                 wrapMode: Text.Wrap
                 maximumLineCount: 400
+            }
+
+            StyledText {
+                Layout.fillWidth: true
+                visible: root.showCaption
+                text: root.text
+                color: root.fromMe ? Colours.palette.m3onPrimaryContainer : Colours.palette.m3onSurface
+                font: Tokens.font.body.small
+                wrapMode: Text.Wrap
+                maximumLineCount: 6
+                elide: Text.ElideRight
             }
 
             Item {
@@ -160,6 +271,54 @@ Item {
                         text: root.statusIcon()
                         color: root.status === "read" ? Colours.palette.m3primary : (root.fromMe ? Colours.palette.m3onPrimaryContainer : Colours.palette.m3onSurfaceVariant)
                         fontStyle: Tokens.font.icon.builders.small.scale(0.85).build()
+                    }
+                }
+            }
+
+            // Chips de reação
+            Flow {
+                Layout.fillWidth: true
+                visible: root.groupedReactions().length > 0
+                spacing: Tokens.spacing.extraSmall
+
+                Repeater {
+                    model: root.groupedReactions()
+
+                    StyledRect {
+                        id: chip
+
+                        required property var modelData
+
+                        implicitWidth: chipRow.implicitWidth + Tokens.spacing.small
+                        implicitHeight: 22
+                        radius: 11
+                        color: chip.modelData.mine ? Qt.alpha(Colours.palette.m3primary, 0.28) : Colours.tPalette.m3surfaceContainerHighest
+
+                        Row {
+                            id: chipRow
+
+                            anchors.centerIn: parent
+                            spacing: 2
+
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: chip.modelData.emoji
+                                font: Tokens.font.body.small
+                            }
+
+                            StyledText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: chip.modelData.count > 1
+                                text: String(chip.modelData.count)
+                                color: Colours.palette.m3onSurfaceVariant
+                                font: Tokens.font.label.small
+                            }
+                        }
+
+                        StateLayer {
+                            radius: parent.radius
+                            onClicked: WhatsAppClient.toggleReaction(root.chat, root.messageId, chip.modelData.emoji)
+                        }
                     }
                 }
             }

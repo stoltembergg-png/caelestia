@@ -37,6 +37,7 @@ Item {
                 required property string lastMessage
                 required property string timestamp
                 required property int unread
+                required property string avatar
 
                 width: ListView.view ? ListView.view.width : 0
                 height: Tokens.padding.extraLarge * 3
@@ -90,6 +91,7 @@ Item {
                     size: 44
                     name: row.name
                     jid: row.jid
+                    avatar: row.avatar
                 }
 
                 // Coluna meta (hora + badge): Item com âncoras para alinhar à

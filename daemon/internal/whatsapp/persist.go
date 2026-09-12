@@ -28,6 +28,13 @@ type fullClient interface {
 	ParseWebMessage(chatJID types.JID, webMsg *waWeb.WebMessageInfo) (*events.Message, error)
 	SendMessage(ctx context.Context, to types.JID, message *waE2E.Message, extra ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error)
 	MarkRead(ctx context.Context, ids []types.MessageID, timestamp time.Time, chat, sender types.JID, receiptTypeExtra ...types.ReceiptType) error
+	// BuildReaction builds the reaction proto sent by message.react.
+	BuildReaction(chat, sender types.JID, id types.MessageID, reaction string) *waE2E.Message
+	// GetProfilePictureInfo resolves the avatar URL of a user or group.
+	GetProfilePictureInfo(ctx context.Context, jid types.JID, params *whatsmeow.GetProfilePictureParams) (*types.ProfilePictureInfo, error)
+	// DownloadToFile streams a media attachment to file so the bytes never live
+	// in memory nor travel over IPC.
+	DownloadToFile(ctx context.Context, msg whatsmeow.DownloadableMessage, file whatsmeow.File) error
 }
 
 // fullClient returns the current client as a fullClient, or nil when the
@@ -327,6 +334,11 @@ func (p *Persister) persistMessageWithRepo(ctx context.Context, repo *database.R
 	}
 
 	text, mtype := extractText(m.Message)
+	media := extractMedia(m.Info.ID, m.Message)
+	mediaID := ""
+	if media != nil {
+		mediaID = m.Info.ID
+	}
 	msg := database.Message{
 		ID:        m.Info.ID,
 		ChatJID:   chatJID,
@@ -337,10 +349,20 @@ func (p *Persister) persistMessageWithRepo(ctx context.Context, repo *database.R
 		Text:      text,
 		QuotedID:  extractQuotedID(m.Message),
 		Status:    initialStatus(m.Info.IsFromMe),
+		MediaID:   mediaID,
 	}
 	inserted, err := repo.InsertMessage(ctx, msg)
 	if err != nil {
 		return err
+	}
+	if media != nil {
+		// Media metadata (including the download proto) is upserted even when
+		// the message row already existed, so a redelivery or an upgrade can
+		// fill in a missing cae_media row. Download state is preserved by the
+		// upsert.
+		if err := repo.UpsertMedia(ctx, *media); err != nil {
+			return err
+		}
 	}
 	if !inserted {
 		return nil

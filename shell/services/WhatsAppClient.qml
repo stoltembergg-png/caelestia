@@ -46,6 +46,13 @@ Singleton {
     // Conversa aberta no momento (jid + nome amigável para o header).
     property string currentChat: ""
     property string currentChatName: ""
+    property string currentChatAvatar: ""
+
+    // Alvo de resposta (faixa de citação no composer).
+    property string replyToId: ""
+    property string replyToName: ""
+    property string replyToText: ""
+    property bool replyToFromMe: false
 
     // Lista de conversas (chats.list / chat.updated).
     readonly property alias chats: chatsModel
@@ -176,6 +183,16 @@ Singleton {
         }
     }
 
+    // Bombeia um pedido de avatar por vez (backoff curto) para não inundar o
+    // daemon com 47 downloads ao mesmo tempo.
+    Timer {
+        id: avatarPump
+
+        interval: 350
+        repeat: false
+        onTriggered: root._pumpAvatar()
+    }
+
     // ------------------------------------------------------------------ //
     // Máquina de estado / correlação
     // ------------------------------------------------------------------ //
@@ -188,6 +205,8 @@ Singleton {
     readonly property int _requestTimeout: 15000
     readonly property int _maxQueue: 128
     property bool _shuttingDown: false
+    readonly property var _avatarRequested: ({})
+    readonly property var _avatarQueue: []
 
     function _syncPendingCount(): void {
         root._pendingCount = Object.keys(root._pending).length;
@@ -504,15 +523,74 @@ Singleton {
         return "Contato";
     }
 
-    function _chatRow(c) {
+    function _field(c, base, key) {
+        if (c && c[key] !== undefined && c[key] !== null)
+            return c[key];
+        if (base && base[key] !== undefined && base[key] !== null)
+            return base[key];
+        return undefined;
+    }
+
+    function _chatRow(c, base) {
+        const jid = String(root._field(c, base, "jid") || "");
+        const kind = String(root._field(c, base, "kind") || "dm");
+        let last = root._field(c, base, "lastMessage");
+        if (last === undefined)
+            last = root._field(c, base, "last_message");
+        if (last === undefined)
+            last = root._field(c, base, "lastPreview");
+        let unread = root._field(c, base, "unread");
+        if (unread === undefined)
+            unread = root._field(c, base, "unread_count");
+        const avatar = root._field(c, base, "avatar");
         return {
-            "jid": String(c.jid || ""),
-            "kind": String(c.kind || "dm"),
-            "name": root._readableName(c.name, c.jid, c.kind),
-            "lastMessage": String(c.lastMessage || c.last_message || c.lastPreview || ""),
-            "timestamp": String(c.timestamp || ""),
-            "unread": Number(c.unread || c.unread_count || 0)
+            "jid": jid,
+            "kind": kind,
+            "name": root._readableName(root._field(c, base, "name"), jid, kind),
+            "lastMessage": String(last === undefined ? "" : last),
+            "timestamp": String(root._field(c, base, "timestamp") || ""),
+            "unread": Number(unread === undefined ? 0 : unread),
+            "avatar": avatar ? String(avatar) : ""
         };
+    }
+
+    // ------------------------------------------------------------------ //
+    // Avatares (download em background, uma vez por jid)
+    // ------------------------------------------------------------------ //
+    function requestAvatar(jid) {
+        const j = String(jid || "");
+        if (!j.length || root._avatarRequested[j])
+            return;
+        root._avatarRequested[j] = true;
+        root._avatarQueue.push(j);
+        if (!avatarPump.running)
+            avatarPump.start();
+    }
+
+    function _pumpAvatar() {
+        if (!root._avatarQueue.length)
+            return;
+        const jid = root._avatarQueue.shift();
+        root._send("avatars.download", {
+            "jid": jid
+        }, function (res, err) {
+            if (!err && res && res.path)
+                root._applyAvatar(jid, res.path);
+            if (root._avatarQueue.length)
+                avatarPump.start();
+        });
+    }
+
+    function _applyAvatar(jid, path) {
+        const j = String(jid || "");
+        const p = String(path || "");
+        if (!j)
+            return;
+        const idx = root._chatIndex(j);
+        if (idx >= 0)
+            chatsModel.setProperty(idx, "avatar", p);
+        if (j === root.currentChat)
+            root.currentChatAvatar = p;
     }
 
     function _chatIndex(jid) {
@@ -537,27 +615,34 @@ Singleton {
         root.unreadCount = total;
     }
 
+    // O pseudo-chat de Status não é uma conversa.
+    function _isSystemChat(jid) {
+        return String(jid || "") === "status@broadcast";
+    }
+
     function _upsertChat(c, moveTop) {
-        if (!c || !c.jid)
+        if (!c || !c.jid || root._isSystemChat(c.jid))
             return;
-        const row = root._chatRow(c);
+        const idx0 = root._chatIndex(String(c.jid));
+        const base = idx0 >= 0 ? chatsModel.get(idx0) : null;
+        const row = root._chatRow(c, base);
         if (!row.jid)
             return;
         const idx = root._chatIndex(row.jid);
         if (idx < 0) {
             chatsModel.append(row);
         } else {
-            // Preserva o contador de não lidas quando o evento não o traz.
-            if (c.unread === undefined && c.unread_count === undefined)
-                row.unread = Number(chatsModel.get(idx).unread || 0);
             chatsModel.set(idx, row);
         }
         const cur = root._chatIndex(row.jid);
         if (moveTop && cur > 0)
             chatsModel.move(cur, 0, 1);
         root._recountUnread();
-        if (row.jid === root.currentChat)
+        if (row.jid === root.currentChat) {
             root.currentChatName = row.name;
+            if (row.avatar.length)
+                root.currentChatAvatar = row.avatar;
+        }
     }
 
     function _bumpChatPreview(jid, preview, timestamp, incrementUnread) {
@@ -573,7 +658,8 @@ Singleton {
             "name": c.name,
             "lastMessage": String(preview || ""),
             "timestamp": String(timestamp || ""),
-            "unread": incrementUnread ? Number(c.unread || 0) + 1 : Number(c.unread || 0)
+            "unread": incrementUnread ? Number(c.unread || 0) + 1 : Number(c.unread || 0),
+            "avatar": String(c.avatar || "")
         };
         chatsModel.set(idx, row);
         if (idx > 0)
@@ -591,12 +677,21 @@ Singleton {
                 return Number(b.timestamp || 0) - Number(a.timestamp || 0);
             });
             chatsModel.clear();
-            for (let i = 0; i < list.length; i++)
+            for (let i = 0; i < list.length; i++) {
+                if (root._isSystemChat(list[i].jid))
+                    continue;
                 chatsModel.append(root._chatRow(list[i]));
+                if (!list[i].avatar)
+                    root.requestAvatar(String(list[i].jid || ""));
+            }
             root._recountUnread();
             root.chatsRefreshed();
-            if (root.currentChat)
+            if (root.currentChat) {
                 root.currentChatName = root._chatName(root.currentChat);
+                const ci = root._chatIndex(root.currentChat);
+                if (ci >= 0)
+                    root.currentChatAvatar = String(chatsModel.get(ci).avatar || "");
+            }
         });
     }
 
@@ -606,6 +701,11 @@ Singleton {
         const id = String(jid);
         root.currentChat = id;
         root.currentChatName = root._chatName(id);
+        const ci = root._chatIndex(id);
+        root.currentChatAvatar = ci >= 0 ? String(chatsModel.get(ci).avatar || "") : "";
+        if (!root.currentChatAvatar.length)
+            root.requestAvatar(id);
+        root.clearReply();
         messagesModel.clear();
         root._send("chat.messages", {
             "jid": id,
@@ -624,13 +724,97 @@ Singleton {
     function closeChat() {
         root.currentChat = "";
         root.currentChatName = "";
+        root.currentChatAvatar = "";
+        root.clearReply();
         messagesModel.clear();
     }
 
     // ------------------------------------------------------------------ //
     // Mensagens
     // ------------------------------------------------------------------ //
+    function _mediaObject(m) {
+        const md = m && m.media ? m.media : null;
+        if (!md || typeof md !== "object")
+            return null;
+        return {
+            "kind": String(md.kind || ""),
+            "mime": String(md.mime || ""),
+            "size": Number(md.size || 0),
+            "width": Number(md.width || 0),
+            "height": Number(md.height || 0),
+            "downloaded": md.downloaded === true,
+            "thumb": String(md.thumb || ""),
+            "path": String(md.path || ""),
+            "duration": Number(md.duration || 0)
+        };
+    }
+
+    function _reactionsArray(r) {
+        if (!Array.isArray(r))
+            return [];
+        const out = [];
+        for (let i = 0; i < r.length; i++) {
+            const e = r[i];
+            if (!e)
+                continue;
+            const emoji = String(e.emoji || e.reaction || "");
+            if (!emoji.length)
+                continue;
+            out.push({
+                "sender": String(e.sender || ""),
+                "emoji": emoji,
+                "fromMe": e.from_me === true || e.fromMe === true
+            });
+        }
+        return out;
+    }
+
+    // O ListModel não preserva arrays como role, então as reações viajam como
+    // string JSON e são parseadas pela UI/consumidores.
+    function reactionsOf(json) {
+        try {
+            const parsed = JSON.parse(String(json || "[]"));
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    // Citação: usa o payload se vier, senão procura a mensagem carregada.
+    function _quotedInfo(m) {
+        if (m.quotedText !== undefined)
+            return {
+                "text": String(m.quotedText || ""),
+                "fromMe": m.quotedFromMe === true
+            };
+        const q = m.quoted || m.quote;
+        if (q && typeof q === "object")
+            return {
+                "text": String(q.text || root._previewFor(q)),
+                "fromMe": q.fromMe === true || q.from_me === true
+            };
+        const qid = String(m.quotedId || "");
+        if (!qid.length)
+            return {
+                "text": "",
+                "fromMe": false
+            };
+        const idx = root._messageIndex(qid);
+        if (idx >= 0) {
+            const qm = messagesModel.get(idx);
+            return {
+                "text": root._previewFor(qm),
+                "fromMe": qm.fromMe === true
+            };
+        }
+        return {
+            "text": "",
+            "fromMe": false
+        };
+    }
+
     function _messageRow(m) {
+        const quoted = root._quotedInfo(m);
         return {
             "messageId": String(m.id || ""),
             "chat": String(m.chat || ""),
@@ -640,9 +824,13 @@ Singleton {
             "type": String(m.type || "text"),
             "text": String(m.text || ""),
             "quotedId": String(m.quotedId || ""),
+            "quotedText": quoted.text,
+            "quotedFromMe": quoted.fromMe,
             "edited": m.edited === true,
             "deleted": m.deleted === true,
-            "status": String(m.status || "")
+            "status": String(m.status || ""),
+            "media": root._mediaObject(m),
+            "reactions": JSON.stringify(root._reactionsArray(m.reactions))
         };
     }
 
@@ -709,6 +897,11 @@ Singleton {
     }
 
     function _onMessageUpdated(data) {
+        // Atualização só de reação: {chat, id, reaction}
+        if (data.reaction !== undefined || (data.emoji !== undefined && (data.id !== undefined || data.message_id !== undefined))) {
+            root._applyReaction(data);
+            return;
+        }
         const msg = data.message || data;
         if (!msg)
             return;
@@ -718,6 +911,31 @@ Singleton {
             messagesModel.set(idx, row);
         else if (row.messageId)
             messagesModel.append(row);
+    }
+
+    function _applyReaction(data) {
+        const id = String(data.id || data.message_id || (data.message && data.message.id) || "");
+        if (!id.length)
+            return;
+        const idx = root._messageIndex(id);
+        if (idx < 0)
+            return;
+        const r = data.reaction;
+        const sender = String((r && r.sender) || data.sender || "");
+        const emoji = String((r && (r.emoji || r.reaction)) || data.emoji || "");
+        const fromMe = (r && (r.from_me === true || r.fromMe === true)) || data.from_me === true;
+        const list = root.reactionsOf(messagesModel.get(idx).reactions).slice();
+        for (let i = list.length - 1; i >= 0; i--) {
+            if (String(list[i].sender) === sender)
+                list.splice(i, 1);
+        }
+        if (emoji.length)
+            list.push({
+                "sender": sender,
+                "emoji": emoji,
+                "fromMe": fromMe
+            });
+        messagesModel.setProperty(idx, "reactions", JSON.stringify(list));
     }
 
     function _onReceiptUpdated(data) {
@@ -730,11 +948,183 @@ Singleton {
             messagesModel.setProperty(idx, "status", status);
     }
 
+    // ------------------------------------------------------------------ //
+    // Resposta / reações / mídia
+    // ------------------------------------------------------------------ //
+    function setReplyTarget(id, name, text, fromMe) {
+        root.replyToId = String(id || "");
+        root.replyToName = String(name || "");
+        root.replyToText = String(text || "");
+        root.replyToFromMe = fromMe === true;
+    }
+
+    function beginReply(chat, id, fromMe) {
+        const mid = String(id || "");
+        if (!mid.length)
+            return;
+        const idx = root._messageIndex(mid);
+        const row = idx >= 0 ? messagesModel.get(idx) : null;
+        root.setReplyTarget(mid, root._chatName(chat), row ? root._previewFor(row) : "", fromMe === true);
+    }
+
+    function clearReply() {
+        root.replyToId = "";
+        root.replyToName = "";
+        root.replyToText = "";
+        root.replyToFromMe = false;
+    }
+
+    // Nota: emoji vazio remove a reação (contrato do daemon).
+    function react(chat, id, emoji) {
+        const jid = String(chat || root.currentChat);
+        const mid = String(id || "");
+        const em = String(emoji || "");
+        if (!jid.length || !mid.length)
+            return;
+        const idx = root._messageIndex(mid);
+        if (idx >= 0) {
+            const list = root.reactionsOf(messagesModel.get(idx).reactions).slice();
+            for (let i = list.length - 1; i >= 0; i--) {
+                if (String(list[i].sender) === root.accountJid)
+                    list.splice(i, 1);
+            }
+            if (em.length) {
+                const me = {
+                    "sender": root.accountJid,
+                    "emoji": em,
+                    "fromMe": true
+                };
+                list.push(me);
+            }
+            messagesModel.setProperty(idx, "reactions", JSON.stringify(list));
+        }
+        root._send("message.react", {
+            "chat": jid,
+            "id": mid,
+            "emoji": em
+        }, function (res, err) {
+            if (err)
+                root.lastError = root._errorMessage(err);
+        });
+    }
+
+    function myReaction(chat, id) {
+        const idx = root._messageIndex(String(id || ""));
+        if (idx < 0)
+            return "";
+        const list = root.reactionsOf(messagesModel.get(idx).reactions);
+        for (let i = 0; i < list.length; i++) {
+            if (list[i].fromMe)
+                return String(list[i].emoji || "");
+        }
+        return "";
+    }
+
+    function toggleReaction(chat, id, emoji) {
+        const mine = root.myReaction(chat, id);
+        root.react(chat, id, mine === String(emoji) ? "" : String(emoji));
+    }
+
+    function openPath(path) {
+        const p = String(path || "");
+        if (!p.length)
+            return;
+        Quickshell.execDetached(["xdg-open", p]);
+    }
+
+    // Baixa (ou reaproveita o cache) e devolve o objeto media via callback.
+    function downloadMedia(chat, id, callback) {
+        const jid = String(chat || root.currentChat);
+        const mid = String(id || "");
+        if (!jid.length || !mid.length) {
+            if (callback)
+                callback(null, {
+                    "code": "invalid_request",
+                    "message": "missing chat/id"
+                });
+            return;
+        }
+        const idx = root._messageIndex(mid);
+        if (idx >= 0) {
+            const cached = messagesModel.get(idx).media;
+            if (cached && cached.downloaded && cached.path) {
+                if (callback)
+                    callback(cached, null);
+                return;
+            }
+        }
+        root._send("media.download", {
+            "chat": jid,
+            "id": mid
+        }, function (res, err) {
+            if (err || !res) {
+                if (callback)
+                    callback(null, err || {
+                        "code": "download_failed",
+                        "message": "media download failed"
+                    });
+                return;
+            }
+            const media = root._mediaObject({
+                "media": res
+            });
+            const i = root._messageIndex(mid);
+            if (i >= 0)
+                messagesModel.setProperty(i, "media", media);
+            if (callback)
+                callback(media, null);
+        });
+    }
+
+    function openMedia(chat, id, currentPath) {
+        if (currentPath && String(currentPath).length) {
+            root.openPath(currentPath);
+            return;
+        }
+        root.downloadMedia(chat, id, function (media, err) {
+            if (!err && media && media.path)
+                root.openPath(media.path);
+        });
+    }
+
     function send(text) {
         const body = String(text || "");
         const jid = root.currentChat;
         if (!body.length || !jid)
             return false;
+        const replyId = root.replyToId;
+        if (replyId.length) {
+            const rName = root.replyToName;
+            const rText = root.replyToText;
+            const rFromMe = root.replyToFromMe;
+            root.clearReply();
+            root._send("message.reply", {
+                "jid": jid,
+                "id": replyId,
+                "text": body
+            }, function (res, err) {
+                if (err || !res) {
+                    root.lastError = root._errorMessage(err) || "send_failed";
+                    return;
+                }
+                root._appendMessageIfNew({
+                    "messageId": res.id,
+                    "chat": jid,
+                    "sender": root.accountJid,
+                    "fromMe": true,
+                    "timestamp": res.timestamp,
+                    "type": "text",
+                    "text": body,
+                    "quotedId": replyId,
+                    "quotedText": rText,
+                    "quotedFromMe": rFromMe,
+                    "status": "sent"
+                });
+                root._bumpChatPreview(jid, body, res.timestamp, false);
+                root.messageAppended(jid);
+            });
+            return true;
+        }
         root._send("message.send", {
             "jid": jid,
             "text": body
