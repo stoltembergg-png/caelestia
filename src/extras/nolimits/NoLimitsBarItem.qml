@@ -44,6 +44,9 @@ StyledRect {
     // uma linha; o logo fica num contêiner discreto comum (iconBox).
     readonly property real iconSize: Math.round(Tokens.sizes.bar.innerWidth * 0.375)
     readonly property real iconBox: Math.round(Tokens.sizes.bar.innerWidth * 0.5)
+    // Tinta aparente alvo do glifo (não do tile do PNG). Com a barra padrão
+    // (innerWidth 40) a placa fica 20×20 e a tinta ~10px nos três provedores.
+    readonly property real iconInk: Math.round(iconBox * 0.5)
     readonly property real dotSize: Math.max(6, Math.round(iconSize * 0.3))
 
     // Lista realmente renderizada: todos os habilitados, ou um placeholder único
@@ -121,15 +124,26 @@ StyledRect {
         if (p === "opencodego")
             return "file://" + home + "/.local/share/icons/hicolor/512x512/apps/ai.opencode.desktop.png";
         if (p === "cursor")
-            return "file://" + home + "/.local/share/icons/hicolor/32x32/apps/co.anysphere.cursor.png";
+            return "file://" + home + "/.local/share/icons/hicolor/256x256/apps/co.anysphere.cursor.png";
         return "";
     }
 
-    // SVGs de provedor (ex.: Codex) desenham o glifo preenchendo todo o viewBox,
-    // enquanto os PNGs (OpenCode Go/Cursor) trazem margem/tile próprio. Renderiza
-    // o SVG a ~82% para casar o PORTE VISUAL dos ícones dentro do mesmo contêiner.
-    function providerIconScale(id) {
-        return providerIcon(id).toLowerCase().endsWith(".svg") ? 0.82 : 1.0;
+    // Cada logo tem um tamanho de desenho próprio para que a TINTA visível (o
+    // glifo, não o tile) fique com porte equivalente (~10px) nos três. O SVG do
+    // Codex preenche todo o quadro, então desenha direto em iconInk; os PNGs
+    // trazem tile/margem interna (o glifo cobre ~68% da altura no OpenCode Go e
+    // ~57% no Cursor), então são desenhados proporcionalmente maiores. Sem
+    // sourceClipRect: o tile próprio de cada PNG é parte da identidade do ícone e
+    // recortá-lo não é necessário para igualar a tinta.
+    function providerIconDrawSize(id) {
+        let p = providerId(id);
+        if (p === "codex")
+            return root.iconInk;
+        if (p === "opencodego")
+            return Math.round(root.iconInk * 1.6);
+        if (p === "cursor")
+            return Math.round(root.iconInk * 1.7);
+        return root.iconInk;
     }
 
     function statusText() {
@@ -216,7 +230,7 @@ StyledRect {
 
         readonly property string iconSource: root.providerIcon(providerRow.modelData ? providerRow.modelData.provider : "")
         readonly property bool hasIcon: providerRow.iconSource !== ""
-        readonly property real iconDrawSize: Math.round(root.iconSize * root.providerIconScale(providerRow.modelData ? providerRow.modelData.provider : ""))
+        readonly property real iconDrawSize: root.providerIconDrawSize(providerRow.modelData ? providerRow.modelData.provider : "")
 
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignHCenter
