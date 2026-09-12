@@ -11,6 +11,8 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
+import Quickshell.Io
 
 Singleton {
     id: root
@@ -35,5 +37,37 @@ Singleton {
             root.hideRequested();
         else
             root.showRequested();
+    }
+
+    // IPC `caelestia shell whatsapp …` / `qs -c caelestia ipc call whatsapp …`
+    IpcHandler {
+        target: "whatsapp"
+
+        function toggle(): void {
+            root.toggle();
+        }
+
+        function show(): void {
+            root.show();
+        }
+
+        function hide(): void {
+            root.hide();
+        }
+
+        function login(): void {
+            WhatsAppClient.startLogin();
+        }
+
+        function logout(): void {
+            WhatsAppClient.logout();
+        }
+    }
+
+    // Atalho global `caelestia:whatsapp` (bind no Hyprland).
+    CustomShortcut {
+        name: "whatsapp"
+        description: "Toggle WhatsApp drawer"
+        onPressed: root.toggle()
     }
 }
