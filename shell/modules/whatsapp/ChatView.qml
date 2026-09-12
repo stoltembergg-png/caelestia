@@ -35,9 +35,11 @@ Item {
                 model: WhatsAppClient.messages
                 // O ritmo vertical é do delegate (dia/grupo), não do ListView.
                 spacing: 0
-                topMargin: root.compact ? Tokens.spacing.small : Tokens.padding.medium
-                // Respiro no fim acima do composer (evita balão colado/cortado).
-                bottomMargin: root.compact ? Tokens.padding.medium : Tokens.padding.large
+                // Fade discreto e margens maiores que a zona de fade, para a
+                // primeira/última mensagem (e legenda/timestamp) ficarem nítidas.
+                fadeAmount: root.compact ? 0.035 : 0.04
+                topMargin: Math.round(height * fadeAmount) + Tokens.spacing.small
+                bottomMargin: Math.round(height * fadeAmount) + Tokens.spacing.medium
                 boundsBehavior: Flickable.StopAtBounds
                 reuseItems: true
                 cacheBuffer: 4000
@@ -126,6 +128,9 @@ Item {
 
                             anchors.left: parent.left
                             anchors.right: parent.right
+                            // Espaço lateral para a cauda protruir sem ser clipada.
+                            anchors.leftMargin: root.compact ? 7 : 10
+                            anchors.rightMargin: root.compact ? 7 : 10
                             y: wrapper.topGap
                             messageId: wrapper.messageId
                             chat: wrapper.chat

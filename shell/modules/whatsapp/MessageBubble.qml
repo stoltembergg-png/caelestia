@@ -8,6 +8,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Shapes
 import Caelestia.Config
 import qs.components
 import qs.services
@@ -50,6 +51,25 @@ Item {
     readonly property bool isOtherType: !root.isText && !root.isMedia
     readonly property bool showCaption: (root.type === "image" || root.type === "video" || root.type === "sticker") && root.text.length > 0
     readonly property real maxWidth: Math.max(160, root.width * (root.compact ? 0.86 : 0.8))
+    readonly property font _bodyFont: root.deleted ? Tokens.font.body.builders.small.italic(true).build() : Tokens.font.body.small
+    readonly property real _maxContentW: Math.max(80, root.maxWidth - root._hpad * 2)
+
+    // Medição "sem wrap" (TextMetrics) para dimensionar o balão de forma
+    // estável: sem depender do implicitWidth do Text já quebrado, que podia
+    // ficar preso em delegate reutilizado (reuseItems).
+    TextMetrics {
+        id: bodyMetrics
+
+        text: root.deleted ? "Mensagem apagada" : root.text
+        font: root._bodyFont
+    }
+
+    TextMetrics {
+        id: captionMetrics
+
+        text: root.text
+        font: Tokens.font.body.small
+    }
 
     function timeText(): string {
         if (!root.timestamp)
@@ -150,8 +170,8 @@ Item {
         // um pouco menor para sugerir a pilha (ritmo).
         topLeftRadius: (!root.fromMe && !root.groupStart) ? Tokens.rounding.small : Tokens.rounding.large
         topRightRadius: (root.fromMe && !root.groupStart) ? Tokens.rounding.small : Tokens.rounding.large
-        bottomLeftRadius: !root.fromMe ? (root.groupEnd ? Tokens.rounding.extraSmall : Tokens.rounding.small) : Tokens.rounding.large
-        bottomRightRadius: root.fromMe ? (root.groupEnd ? Tokens.rounding.extraSmall : Tokens.rounding.small) : Tokens.rounding.large
+        bottomLeftRadius: !root.fromMe ? (root.groupEnd ? 0 : Tokens.rounding.small) : Tokens.rounding.large
+        bottomRightRadius: root.fromMe ? (root.groupEnd ? 0 : Tokens.rounding.small) : Tokens.rounding.large
 
         ColumnLayout {
             id: content
@@ -249,17 +269,19 @@ Item {
             }
 
             StyledText {
-                Layout.fillWidth: true
+                Layout.fillWidth: false
+                Layout.preferredWidth: Math.min(bodyMetrics.advanceWidth, root._maxContentW)
                 visible: root.isText || root.deleted
                 text: root.deleted ? "Mensagem apagada" : root.text
                 color: root.fromMe ? Colours.palette.m3onPrimaryContainer : Colours.palette.m3onSurface
-                font: root.deleted ? Tokens.font.body.builders.small.italic(true).build() : Tokens.font.body.small
+                font: root._bodyFont
                 wrapMode: Text.Wrap
                 maximumLineCount: 400
             }
 
             StyledText {
-                Layout.fillWidth: true
+                Layout.fillWidth: false
+                Layout.preferredWidth: Math.min(captionMetrics.advanceWidth, root._maxContentW)
                 visible: root.showCaption
                 text: root.text
                 color: root.fromMe ? Colours.palette.m3onPrimaryContainer : Colours.palette.m3onSurface
@@ -306,9 +328,9 @@ Item {
                 }
             }
 
-            // Chips de reação
-            Flow {
-                Layout.fillWidth: true
+            // Chips de reação (lado a lado; menores no compacto)
+            Row {
+                Layout.fillWidth: false
                 visible: root.groupedReactions().length > 0
                 spacing: Tokens.spacing.extraSmall
 
@@ -320,9 +342,9 @@ Item {
 
                         required property var modelData
 
-                        implicitWidth: chipRow.implicitWidth + Tokens.spacing.small
-                        implicitHeight: 22
-                        radius: 11
+                        implicitWidth: chipRow.implicitWidth + (root.compact ? Tokens.spacing.extraSmall : Tokens.spacing.small)
+                        implicitHeight: root.compact ? 18 : 22
+                        radius: height / 2
                         color: chip.modelData.mine ? Qt.alpha(Colours.palette.m3primary, 0.28) : Colours.tPalette.m3surfaceContainerHighest
 
                         Row {
@@ -334,7 +356,7 @@ Item {
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: chip.modelData.emoji
-                                font: Tokens.font.body.small
+                                font: root.compact ? Tokens.font.label.small : Tokens.font.body.small
                             }
 
                             StyledText {
@@ -351,6 +373,37 @@ Item {
                             onClicked: WhatsAppClient.toggleReaction(root.chat, root.messageId, chip.modelData.emoji)
                         }
                     }
+                }
+            }
+        }
+
+        // Cauda (só no fim do grupo): triângulo que "sai" do canto do
+        // remetente e funde com o canto reto do balão.
+        Shape {
+            id: tail
+
+            visible: root.groupEnd
+            width: 8
+            height: 10
+            x: root.fromMe ? bubble.width : -width
+            y: bubble.height - height
+
+            ShapePath {
+                fillColor: bubble.color
+                strokeWidth: 0
+                startX: root.fromMe ? 0 : tail.width
+                startY: 0
+                PathLine {
+                    x: root.fromMe ? tail.width : 0
+                    y: tail.height
+                }
+                PathLine {
+                    x: root.fromMe ? 0 : tail.width
+                    y: tail.height
+                }
+                PathLine {
+                    x: root.fromMe ? 0 : tail.width
+                    y: 0
                 }
             }
         }
