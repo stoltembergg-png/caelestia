@@ -223,7 +223,7 @@ Singleton {
 
         add(u.primary, "S");
         add(u.secondary, cursor ? "M" : "W");
-        add(u.tertiary, providerId(entry.provider) === "commandcode" ? "Monthly" : "T");
+        add(u.tertiary, providerId(entry.provider) === "commandcode" ? I18n.t("kodexbar.monthly") : "T");
 
         let extras = u.extraRateWindows;
         if (Array.isArray(extras)) {
