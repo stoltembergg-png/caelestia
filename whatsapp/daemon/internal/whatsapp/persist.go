@@ -1,0 +1,853 @@
+package whatsapp
+
+import (
+	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"path/filepath"
+	"strconv"
+	"sync"
+	"time"
+
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waHistorySync"
+	"go.mau.fi/whatsmeow/proto/waWeb"
+	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
+
+	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/database"
+	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/ipc"
+	"github.com/stoltembergg-png/caelestia-whatsapp/daemon/internal/logging"
+)
+
+// fullClient is the extended whatsmeow surface used by the persistence worker
+// and the IPC methods. *realClient satisfies it (it embeds *whatsmeow.Client);
+// tests provide fakes.
+type fullClient interface {
+	waClient
+	ParseWebMessage(chatJID types.JID, webMsg *waWeb.WebMessageInfo) (*events.Message, error)
+	SendMessage(ctx context.Context, to types.JID, message *waE2E.Message, extra ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error)
+	MarkRead(ctx context.Context, ids []types.MessageID, timestamp time.Time, chat, sender types.JID, receiptTypeExtra ...types.ReceiptType) error
+	// BuildReaction builds the reaction proto sent by message.react.
+	BuildReaction(chat, sender types.JID, id types.MessageID, reaction string) *waE2E.Message
+	// GetProfilePictureInfo resolves the avatar URL of a user or group.
+	GetProfilePictureInfo(ctx context.Context, jid types.JID, params *whatsmeow.GetProfilePictureParams) (*types.ProfilePictureInfo, error)
+	// DownloadToFile streams a media attachment to file so the bytes never live
+	// in memory nor travel over IPC.
+	DownloadToFile(ctx context.Context, msg whatsmeow.DownloadableMessage, file whatsmeow.File) error
+	// UploadReader streams plaintext to WhatsApp for an outbound media message.
+	// tempFile is the scratch file the encryption pass uses; the caller owns it.
+	UploadReader(ctx context.Context, plaintext io.Reader, tempFile io.ReadWriteSeeker, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error)
+	// GetGroupInfo fetches a group's subject/participants. Used by the bounded
+	// group-name repair to restore a persisted name clobbered by a sender push
+	// name (see group_repair.go).
+	GetGroupInfo(ctx context.Context, jid types.JID) (*types.GroupInfo, error)
+}
+
+// fullClient returns the current client as a fullClient, or nil when the
+// underlying implementation only provides the base waClient surface.
+func (s *Service) fullClient() fullClient {
+	c := s.currentClient()
+	if c == nil {
+		return nil
+	}
+	fc, _ := c.(fullClient)
+	return fc
+}
+
+// Persister consumes Message/Receipt/HistorySync/Contact/GroupInfo events and
+// writes them to the cae_* tables. It runs a single worker goroutine so writes
+// are serialized and the whatsmeow handler is never blocked: the handler only
+// classifies and enqueues.
+type Persister struct {
+	svc    *Service
+	repo   *database.Repo
+	logger *slog.Logger
+
+	// thumbDir is where embedded thumbnails are materialized on persistence.
+	// Empty disables thumbnail extraction (tests that do not need files).
+	thumbDir string
+
+	inbox chan any
+	done  chan struct{}
+	wg    sync.WaitGroup
+
+	closeOnce sync.Once
+
+	// parseWebMessage is a seam over the client so history sync can be tested
+	// with a fake parser (the real client requires a live session).
+	parseWebMessage func(types.JID, *waWeb.WebMessageInfo) (*events.Message, error)
+
+	// domainMu guards onDomainEvent, which main.go sets right after
+	// EnablePersistence starts the worker.
+	domainMu      sync.RWMutex
+	onDomainEvent func(event string, data any)
+}
+
+// OnDomainEvent registers a callback invoked on the persistence worker after an
+// event has been committed to the database (persist-before-publish). The
+// payloads are IPC-ready and never contain secrets. Passing nil clears it.
+//
+// The callback runs synchronously on the worker, so in production it is bound
+// to ipc.Server.Broadcast, which is bounded by the per-client write deadline.
+func (p *Persister) OnDomainEvent(fn func(event string, data any)) {
+	if p == nil {
+		return
+	}
+	p.domainMu.Lock()
+	p.onDomainEvent = fn
+	p.domainMu.Unlock()
+}
+
+// emitDomain invokes the registered domain-event hook, if any.
+func (p *Persister) emitDomain(name string, data map[string]any) {
+	p.domainMu.RLock()
+	fn := p.onDomainEvent
+	p.domainMu.RUnlock()
+	if fn != nil {
+		fn(name, data)
+	}
+}
+
+// EnablePersistence attaches a persistence pipeline to the service and starts
+// its worker. The Persister is registered on the current client and stored on
+// the Service, so attachHandlersLocked re-registers it on every client built
+// afterwards (e.g. after a logout + re-pair). Callers must Close the returned
+// Persister before closing the DB.
+func (s *Service) EnablePersistence(repo *database.Repo, dataDir string) *Persister {
+	if repo == nil {
+		panic("whatsapp: EnablePersistence with nil repo")
+	}
+	thumbDir := ""
+	if dataDir != "" {
+		thumbDir = filepath.Join(dataDir, "thumbnails")
+	}
+	p := &Persister{
+		svc:      s,
+		repo:     repo,
+		logger:   s.logger,
+		thumbDir: thumbDir,
+		inbox:    make(chan any, eventBufferSize*4),
+		done:     make(chan struct{}),
+	}
+	p.parseWebMessage = func(chatJID types.JID, wm *waWeb.WebMessageInfo) (*events.Message, error) {
+		c := s.fullClient()
+		if c == nil {
+			return nil, errors.New("whatsapp: client unavailable")
+		}
+		return c.ParseWebMessage(chatJID, wm)
+	}
+
+	// Publish the persister and register it on the current client under the
+	// same lock the rebuild path uses: a concurrent rebuild then either sees
+	// the persister and attaches it to the new client, or saw a nil persister
+	// and this call attaches it to the client the rebuild has just installed.
+	s.mu.Lock()
+	s.persister = p
+	s.groupRepair = NewGroupRepairer(s, repo, s.logger)
+	s.thumbRepair = NewThumbRepairer(s, repo, thumbDir, s.logger)
+	if s.client != nil {
+		s.client.AddEventHandler(p.handleEvent)
+	}
+	s.mu.Unlock()
+
+	// One bounded pass at startup materializes the embedded thumbnails of media
+	// persisted before thumbnails were extracted. It is local-only (reads the
+	// stored proto), so it does not need a connection.
+	if s.thumbRepair != nil {
+		s.thumbRepair.Kick()
+	}
+
+	p.wg.Add(1)
+	go p.run()
+	return p
+}
+
+// Close stops the worker. It does not close the shared database.
+func (p *Persister) Close() {
+	if p == nil {
+		return
+	}
+	p.closeOnce.Do(func() {
+		close(p.done)
+		p.wg.Wait()
+	})
+}
+
+// handleEvent is the fast path: it drops everything irrelevant and enqueues the
+// persistent event types without doing I/O.
+func (p *Persister) handleEvent(evt any) {
+	switch evt.(type) {
+	case *events.Message, *events.Receipt, *events.HistorySync, *events.Contact, *events.GroupInfo:
+	default:
+		return
+	}
+	select {
+	case p.inbox <- evt:
+	case <-p.done:
+	}
+}
+
+func (p *Persister) run() {
+	defer p.wg.Done()
+	for {
+		select {
+		case <-p.done:
+			// Shutdown: whatever was already queued must still be written
+			// before the worker exits, otherwise events accepted during the
+			// handler's lifetime are silently dropped.
+			p.drain()
+			return
+		case evt := <-p.inbox:
+			p.process(evt)
+		}
+	}
+}
+
+// drain processes every event already buffered in the inbox and returns as
+// soon as the inbox is momentarily empty. It runs on shutdown so events the
+// handler already accepted are written instead of being dropped.
+func (p *Persister) drain() {
+	for {
+		select {
+		case evt := <-p.inbox:
+			p.process(evt)
+		default:
+			return
+		}
+	}
+}
+
+// process persists one event, logging (without secrets) on failure.
+func (p *Persister) process(evt any) {
+	ctx := p.svc.ctx
+	switch e := evt.(type) {
+	case *events.Message:
+		if err := p.persistMessage(ctx, e); err != nil {
+			p.logger.Warn("whatsapp: persist message failed",
+				slog.String("chat", logging.RedactJID(e.Info.Chat.String())),
+				slog.String("error", err.Error()))
+		}
+	case *events.Receipt:
+		if err := p.persistReceipt(ctx, e); err != nil {
+			p.logger.Warn("whatsapp: persist receipt failed",
+				slog.String("chat", logging.RedactJID(e.Chat.String())),
+				slog.String("error", err.Error()))
+		}
+	case *events.HistorySync:
+		if err := p.persistHistory(ctx, e); err != nil {
+			p.logger.Warn("whatsapp: persist history sync failed",
+				slog.String("error", err.Error()))
+		}
+	case *events.Contact:
+		if err := p.persistContact(ctx, e); err != nil {
+			p.logger.Warn("whatsapp: persist contact failed", slog.String("error", err.Error()))
+		}
+	case *events.GroupInfo:
+		if err := p.persistGroup(ctx, e); err != nil {
+			p.logger.Warn("whatsapp: persist group failed", slog.String("error", err.Error()))
+		}
+	}
+}
+
+// persistMessage stores one incoming/outgoing message and updates the chat
+// bookkeeping. It is idempotent: duplicate MessageIDs are ignored and do not
+// bump the unread counter. Live messages publish domain events; history sync
+// uses persistMessageWithRepo with emit=false so backfill does not flood the
+// frontend with message.received for old messages.
+func (p *Persister) persistMessage(ctx context.Context, m *events.Message) error {
+	return p.persistMessageWithRepo(ctx, p.repo, m, true)
+}
+
+// persistMessageWithRepo is persistMessage bound to an explicit repository so
+// history sync can run a whole conversation inside one transaction. When emit
+// is true, a newly inserted message publishes message.received (and, when the
+// chat bookkeeping changed, chat.updated) after the database commit.
+func (p *Persister) persistMessageWithRepo(ctx context.Context, repo *database.Repo, m *events.Message, emit bool) error {
+	if m == nil || m.Info.ID == "" || m.Info.Chat.IsEmpty() {
+		return nil
+	}
+
+	// Reactions carry no message content. Store only the reaction metadata:
+	// they must never create a cae_messages row nor touch last_message,
+	// preview or the unread counter (see docs/IPC.md §6).
+	if rm := m.Message.GetReactionMessage(); rm != nil {
+		return p.persistReaction(ctx, repo, m, rm)
+	}
+
+	// Revocations and edits mutate an existing message instead of inserting.
+	// Every other protocol message (receipts, ephemeral settings, history sync
+	// notifications, key shares, ...) is not user-visible and is ignored
+	// entirely: no type=protocol row, no unread bump.
+	if pm := m.Message.GetProtocolMessage(); pm != nil {
+		switch pm.GetType() {
+		case waE2E.ProtocolMessage_REVOKE:
+			id := pm.GetKey().GetID()
+			if id == "" {
+				return nil
+			}
+			if err := repo.SetMessageDeleted(ctx, id); err != nil {
+				return err
+			}
+			if emit {
+				p.emitDomain(EventMessageUpdated, map[string]any{
+					"chat":    m.Info.Chat.String(),
+					"id":      id,
+					"deleted": true,
+				})
+			}
+			return nil
+		case waE2E.ProtocolMessage_MESSAGE_EDIT:
+			id := pm.GetKey().GetID()
+			if id == "" {
+				return nil
+			}
+			text, _ := extractText(pm.GetEditedMessage())
+			if err := repo.SetMessageEdited(ctx, id, text); err != nil {
+				return err
+			}
+			if emit {
+				p.emitDomain(EventMessageUpdated, map[string]any{
+					"chat":   m.Info.Chat.String(),
+					"id":     id,
+					"edited": true,
+				})
+			}
+			return nil
+		default:
+			// Any other protocol message is ignored entirely: no DB row and no
+			// domain event.
+			return nil
+		}
+	}
+
+	chatJID := m.Info.Chat.String()
+	kind := "dm"
+	if m.Info.IsGroup || m.Info.Chat.Server == types.GroupServer {
+		kind = "group"
+	}
+
+	// Resolve the display name: for a DM the saved contact/push name, for a
+	// group the authoritative subject (cae_groups / stored group name). The
+	// sender's push name is never used to name a group — a message from Fábio
+	// in a group must not rename the group to "Fábio". An unresolved name is
+	// passed through as "": UpsertChat never overwrites a known name with an
+	// empty one and a lazy fallback (formatted phone / raw JID) is never
+	// persisted as if it were a real name.
+	push := ""
+	if !m.Info.IsFromMe && kind != "group" {
+		push = m.Info.PushName
+	}
+	name := p.resolveName(ctx, repo, chatJID, push)
+	if err := repo.UpsertChat(ctx, database.Chat{JID: chatJID, Kind: kind, Name: name}); err != nil {
+		return err
+	}
+
+	// Contacts: the DM peer, or the group participant. Never derive a contact
+	// from our own outgoing message (that would store our own push name under
+	// the peer's JID).
+	senderJID := m.Info.Sender.String()
+	contactJID := chatJID
+	if kind == "group" {
+		contactJID = senderJID
+	}
+	if !m.Info.IsFromMe && contactJID != "" && m.Info.PushName != "" {
+		if err := repo.UpsertContact(ctx, database.Contact{
+			JID:      contactJID,
+			PushName: m.Info.PushName,
+		}); err != nil {
+			return err
+		}
+	}
+
+	text, mtype := extractText(m.Message)
+	media := extractMedia(m.Info.ID, m.Message)
+	mediaID := ""
+	if media != nil {
+		mediaID = m.Info.ID
+		// Materialize the thumbnail embedded in the media protobuf right away
+		// (image/video/sticker carry JPEGThumbnail, sticker a PngThumbnail).
+		// This is offline and independent of media.download, so chat.messages
+		// can render a preview before the full file is fetched.
+		p.attachEmbeddedThumb(media)
+	}
+	msg := database.Message{
+		ID:        m.Info.ID,
+		ChatJID:   chatJID,
+		SenderJID: senderJID,
+		FromMe:    m.Info.IsFromMe,
+		Timestamp: m.Info.Timestamp.UnixMilli(),
+		Type:      mtype,
+		Text:      text,
+		QuotedID:  extractQuotedID(m.Message),
+		Status:    initialStatus(m.Info.IsFromMe),
+		MediaID:   mediaID,
+	}
+	inserted, err := repo.InsertMessage(ctx, msg)
+	if err != nil {
+		return err
+	}
+	if media != nil {
+		// Media metadata (including the download proto) is upserted even when
+		// the message row already existed, so a redelivery or an upgrade can
+		// fill in a missing cae_media row. Download state is preserved by the
+		// upsert.
+		if err := repo.UpsertMedia(ctx, *media); err != nil {
+			return err
+		}
+	}
+	if !inserted {
+		return nil
+	}
+
+	if err := repo.UpdateChatLastMessage(ctx, chatJID, msg.ID, msg.Timestamp, preview(text, mtype)); err != nil {
+		return err
+	}
+	// Only incoming, newly stored messages increase the unread counter.
+	if !m.Info.IsFromMe {
+		if err := repo.IncrementUnread(ctx, chatJID); err != nil {
+			return err
+		}
+	}
+
+	// Persist first, publish second: by this point the message row and the
+	// chat bookkeeping are committed, so a consumer reacting to the event sees
+	// the new state in the local database.
+	if emit {
+		p.emitDomain(EventMessageReceived, map[string]any{
+			"chat":      chatJID,
+			"sender":    senderJID,
+			"id":        msg.ID,
+			"text":      text,
+			"timestamp": ipc.StringTimestamp(msg.Timestamp),
+			"from_me":   msg.FromMe,
+			"type":      mtype,
+		})
+		// chat.updated is only meaningful when the last message or the unread
+		// counter changed: a new message became the chat's last (LastMessageID
+		// == its id) or it was an incoming one, which always bumps unread.
+		if c, cerr := repo.GetChat(ctx, chatJID); cerr == nil {
+			if c.LastMessageID == msg.ID || !m.Info.IsFromMe {
+				p.emitChatUpdated(c)
+			}
+		}
+	}
+	return nil
+}
+
+// emitChatUpdated publishes the current chat row. It is called only after the
+// change is committed.
+func (p *Persister) emitChatUpdated(c *database.Chat) {
+	if c == nil {
+		return
+	}
+	p.emitDomain(EventChatUpdated, chatUpdatedData(c))
+}
+
+// chatUpdatedData builds the chat.updated payload from a committed chat row.
+// Shared by the Persister and the chats.list name backfill.
+func chatUpdatedData(c *database.Chat) map[string]any {
+	data := map[string]any{
+		"jid":          c.JID,
+		"unread":       c.UnreadCount,
+		"last_message": c.LastPreview,
+		"last_ts":      ipc.StringTimestamp(c.LastMessageTS),
+	}
+	if c.Name != "" {
+		data["name"] = c.Name
+	}
+	return data
+}
+
+// persistReaction stores a reaction as metadata only, in cae_reactions. It
+// creates no cae_messages row, so the chat list (last_message/preview) and the
+// unread counter are untouched. An empty reaction text removes the reaction.
+func (p *Persister) persistReaction(ctx context.Context, repo *database.Repo, m *events.Message, rm *waE2E.ReactionMessage) error {
+	target := rm.GetKey().GetID()
+	if target == "" {
+		return nil
+	}
+	return repo.UpsertReaction(ctx, database.Reaction{
+		MessageID: target,
+		ChatJID:   m.Info.Chat.String(),
+		SenderJID: m.Info.Sender.String(),
+		Emoji:     rm.GetText(),
+		FromMe:    m.Info.IsFromMe,
+		Timestamp: m.Info.Timestamp.UnixMilli(),
+	})
+}
+
+// persistReceipt records per-user receipts and advances the message status.
+// A read receipt generated by one of our own devices clears the chat unread.
+// After the writes it publishes receipt.updated, plus chat.updated when the
+// unread counter was cleared.
+func (p *Persister) persistReceipt(ctx context.Context, r *events.Receipt) error {
+	if r == nil || len(r.MessageIDs) == 0 {
+		return nil
+	}
+	chat := r.Chat.String()
+	// ReceiptTypeDelivered is the empty string in whatsmeow; store a readable
+	// value instead.
+	rtype := string(r.Type)
+	if rtype == "" {
+		rtype = "delivered"
+	}
+
+	ids := make([]string, 0, len(r.MessageIDs))
+	for _, id := range r.MessageIDs {
+		ids = append(ids, string(id))
+		if err := p.repo.InsertReceipt(ctx, database.Receipt{
+			MessageID: string(id),
+			UserJID:   r.Sender.String(),
+			Type:      rtype,
+			TS:        r.Timestamp.UnixMilli(),
+		}); err != nil {
+			return err
+		}
+	}
+
+	status := rtype
+	clearUnread := false
+	switch r.Type {
+	case types.ReceiptTypeRead, types.ReceiptTypeReadSelf:
+		// Both advance the stored message status to "read"; report that
+		// stable value rather than whatsmeow's "read-self".
+		status = "read"
+		if err := p.repo.SetMessagesStatus(ctx, ids, "read"); err != nil {
+			return err
+		}
+		if r.IsFromMe || r.Type == types.ReceiptTypeReadSelf {
+			if err := p.repo.MarkChatRead(ctx, chat); err != nil {
+				return err
+			}
+			clearUnread = true
+		}
+	case types.ReceiptTypeDelivered:
+		if err := p.repo.SetMessagesStatus(ctx, ids, "delivered"); err != nil {
+			return err
+		}
+	}
+
+	// Publish only after everything above was committed.
+	p.emitDomain(EventReceiptUpdated, map[string]any{
+		"chat":   chat,
+		"ids":    ids,
+		"status": status,
+	})
+	if clearUnread {
+		if c, err := p.repo.GetChat(ctx, chat); err == nil {
+			p.emitChatUpdated(c)
+		}
+	}
+	return nil
+}
+
+// persistContact upserts contact names from app-state sync. When the event
+// carries a PN alternative, both identities are stored.
+func (p *Persister) persistContact(ctx context.Context, c *events.Contact) error {
+	if c == nil || c.Action == nil || c.JID.IsEmpty() {
+		return nil
+	}
+	contact := database.Contact{
+		JID:       c.JID.String(),
+		FirstName: c.Action.GetFirstName(),
+		FullName:  c.Action.GetFullName(),
+	}
+	if err := p.repo.UpsertContact(ctx, contact); err != nil {
+		return err
+	}
+	// Store the phone-number identity too, so searches can match either form.
+	if pn := c.Action.GetPnJID(); pn != "" && pn != contact.JID {
+		if err := p.repo.UpsertContact(ctx, database.Contact{
+			JID:       pn,
+			FirstName: contact.FirstName,
+			FullName:  contact.FullName,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// persistGroup upserts group metadata and mirrors the name into the chat row.
+func (p *Persister) persistGroup(ctx context.Context, g *events.GroupInfo) error {
+	if g == nil || g.JID.IsEmpty() {
+		return nil
+	}
+	group := database.Group{JID: g.JID.String()}
+	if g.Name != nil {
+		group.Name = g.Name.Name
+	}
+	if g.Topic != nil {
+		group.Topic = g.Topic.Topic
+	}
+	if err := p.repo.UpsertGroup(ctx, group); err != nil {
+		return err
+	}
+	if group.Name != "" {
+		prev, _ := p.repo.GetChat(ctx, group.JID)
+		if err := p.repo.UpsertChat(ctx, database.Chat{
+			JID:  group.JID,
+			Kind: "group",
+			Name: group.Name,
+		}); err != nil {
+			return err
+		}
+		// A group subject is authoritative: announce it so clients drop a stale
+		// (possibly participant-named) row.
+		if prev == nil || prev.Name != group.Name {
+			if c, err := p.repo.GetChat(ctx, group.JID); err == nil {
+				p.emitChatUpdated(c)
+			}
+		}
+	}
+	return nil
+}
+
+// persistHistory ingests one HistorySync batch. Conversation/message inserts
+// are idempotent (message PK = MessageID), so replaying a batch is safe.
+func (p *Persister) persistHistory(ctx context.Context, h *events.HistorySync) error {
+	if h == nil || h.Data == nil {
+		return nil
+	}
+	data := h.Data
+
+	for _, pn := range data.GetPushnames() {
+		if pn.GetID() == "" {
+			continue
+		}
+		if err := p.repo.UpsertContact(ctx, database.Contact{
+			JID:      pn.GetID(),
+			PushName: pn.GetPushname(),
+		}); err != nil {
+			return err
+		}
+	}
+	for _, ic := range data.GetInlineContacts() {
+		jid := ic.GetPnJID()
+		if jid == "" {
+			jid = ic.GetLidJID()
+		}
+		if jid == "" {
+			continue
+		}
+		if err := p.repo.UpsertContact(ctx, database.Contact{
+			JID:       jid,
+			FirstName: ic.GetFirstName(),
+			FullName:  ic.GetFullName(),
+		}); err != nil {
+			return err
+		}
+	}
+
+	// Each conversation is applied in one transaction to amortize the
+	// per-statement fsync cost while keeping the inserts idempotent (replaying
+	// a batch remains safe). Prioritizing or parallelizing history sync
+	// relative to live events, in a separate lane, is deferred to the work
+	// before F4.
+	for _, conv := range data.GetConversations() {
+		if err := p.repo.WithTx(ctx, func(tx *database.Repo) error {
+			return p.persistConversation(ctx, tx, conv.GetID(), conv.GetDisplayName(), conv.GetName(),
+				conv.GetLastMsgTimestamp(), int(conv.GetUnreadCount()), conv.GetMessages(), h)
+		}); err != nil {
+			return err
+		}
+	}
+
+	// Bookkeeping: mark the sync as complete once the server reports 100%.
+	if data.GetProgress() >= 100 {
+		if err := p.repo.SetSyncState(ctx, "history_done", "1"); err != nil {
+			return err
+		}
+	} else {
+		if err := p.repo.SetSyncState(ctx, "history_progress",
+			strconv.FormatUint(uint64(data.GetProgress()), 10)); err != nil {
+			return err
+		}
+	}
+	if err := p.repo.SetSyncState(ctx, "history_last_sync",
+		strconv.FormatInt(time.Now().UnixMilli(), 10)); err != nil {
+		return err
+	}
+	return nil
+}
+
+// persistConversation handles a single history conversation. repo is the
+// transaction-bound repository supplied by persistHistory.
+func (p *Persister) persistConversation(
+	ctx context.Context,
+	repo *database.Repo,
+	chatJID, displayName, name string,
+	lastTS uint64,
+	unread int,
+	messages []*waHistorySync.HistorySyncMsg,
+	h *events.HistorySync,
+) error {
+	if chatJID == "" {
+		return nil
+	}
+	parsed, err := types.ParseJID(chatJID)
+	if err != nil {
+		return nil
+	}
+	kind := "dm"
+	if parsed.Server == types.GroupServer {
+		kind = "group"
+	}
+	chatName := displayName
+	if chatName == "" {
+		chatName = name
+	}
+	if chatName == "" {
+		chatName = p.resolveName(ctx, repo, chatJID, "")
+	}
+	if err := repo.UpsertChat(ctx, database.Chat{JID: chatJID, Kind: kind, Name: chatName}); err != nil {
+		return err
+	}
+
+	// Messages first: UpdateChatLastMessage inside persistMessage keeps the
+	// newest timestamp, and the conversation values below are authoritative.
+	for _, hm := range messages {
+		if hm == nil || hm.GetMessage() == nil {
+			continue
+		}
+		ev, perr := p.parseWebMessage(parsed, hm.GetMessage())
+		if perr != nil {
+			p.logger.Debug("whatsapp: history message skipped",
+				slog.String("error", perr.Error()))
+			continue
+		}
+		if err := p.persistMessageWithRepo(ctx, repo, ev, false); err != nil {
+			return err
+		}
+	}
+	// The conversation display name is authoritative and must win over a push
+	// name picked up while replaying its messages (persistMessageWithRepo
+	// resolves names too, and UpsertChat overwrites any non-empty name).
+	if chatName != "" {
+		if err := repo.UpsertChat(ctx, database.Chat{JID: chatJID, Kind: kind, Name: chatName}); err != nil {
+			return err
+		}
+	}
+	if lastTS > 0 {
+		if err := repo.SetChatLastTimestamp(ctx, chatJID, int64(lastTS)*1000); err != nil {
+			return err
+		}
+	}
+	// History sync is authoritative about the unread count.
+	return repo.SetUnread(ctx, chatJID, unread)
+}
+
+// resolveName returns the best *resolved* display name for jid (group subject,
+// saved contact through any LID<->PN mapping, then push name), or "" when only
+// a fallback (formatted phone / raw JID) is available. Persistence stores the
+// empty string in that case so a later message can still improve the name;
+// resolution is cached for a short while by the shared NameResolver. repo is
+// passed explicitly so the lookup can run inside the caller's transaction.
+func (p *Persister) resolveName(ctx context.Context, repo *database.Repo, jid, push string) string {
+	if p == nil || p.svc == nil {
+		return ""
+	}
+	name, resolved := p.svc.nameResolver().Resolve(ctx, repo, jid, push)
+	if !resolved {
+		return ""
+	}
+	return name
+}
+
+// extractText returns the human-readable text and a coarse type for a message.
+func extractText(m *waE2E.Message) (string, string) {
+	if m == nil {
+		return "", "unknown"
+	}
+	switch {
+	case m.GetConversation() != "":
+		return m.GetConversation(), "text"
+	case m.GetExtendedTextMessage() != nil:
+		return m.GetExtendedTextMessage().GetText(), "text"
+	case m.GetImageMessage() != nil:
+		return m.GetImageMessage().GetCaption(), "image"
+	case m.GetVideoMessage() != nil:
+		return m.GetVideoMessage().GetCaption(), "video"
+	case m.GetAudioMessage() != nil:
+		return "", "audio"
+	case m.GetDocumentMessage() != nil:
+		return m.GetDocumentMessage().GetCaption(), "document"
+	case m.GetStickerMessage() != nil:
+		return "", "sticker"
+	case m.GetLocationMessage() != nil:
+		return "", "location"
+	case m.GetContactMessage() != nil:
+		return "", "contact"
+	case m.GetReactionMessage() != nil:
+		return m.GetReactionMessage().GetText(), "reaction"
+	case m.GetProtocolMessage() != nil:
+		return "", "protocol"
+	default:
+		return "", "unknown"
+	}
+}
+
+// extractQuotedID returns the stanza id of the quoted message, when present.
+func extractQuotedID(m *waE2E.Message) string {
+	if m == nil {
+		return ""
+	}
+	if ci := m.GetExtendedTextMessage().GetContextInfo(); ci != nil {
+		return ci.GetStanzaID()
+	}
+	if ci := m.GetImageMessage().GetContextInfo(); ci != nil {
+		return ci.GetStanzaID()
+	}
+	if ci := m.GetVideoMessage().GetContextInfo(); ci != nil {
+		return ci.GetStanzaID()
+	}
+	if ci := m.GetDocumentMessage().GetContextInfo(); ci != nil {
+		return ci.GetStanzaID()
+	}
+	return ""
+}
+
+// preview builds the chat list preview for a message.
+func preview(text, mtype string) string {
+	if text != "" {
+		return text
+	}
+	return "[" + mtype + "]"
+}
+
+// initialStatus is the status stored for a freshly persisted message.
+func initialStatus(fromMe bool) string {
+	if fromMe {
+		return "sent"
+	}
+	return ""
+}
+
+// attachEmbeddedThumb extracts the thumbnail already present in a media
+// protobuf and writes it to thumbnails/<sha256>.jpg (0600), setting md.ThumbPath
+// so it is persisted even when the full media is not downloaded. It is a no-op
+// when there is no embedded thumbnail or no thumbnail directory configured.
+func (p *Persister) attachEmbeddedThumb(md *database.Media) {
+	if p == nil || md == nil || p.thumbDir == "" {
+		return
+	}
+	data := mediaThumbnail(md.Kind, md.Proto)
+	if len(data) == 0 {
+		return
+	}
+	sha := mediaProtoSHA256(md.Kind, md.Proto)
+	if sha == "" {
+		sha = sha256HexBytes(md.Proto)
+	}
+	path, err := writeThumbFile(p.thumbDir, sha, data)
+	if err != nil {
+		p.logger.Debug("whatsapp: embedded thumbnail write failed",
+			slog.String("kind", md.Kind),
+			slog.String("error", err.Error()))
+		return
+	}
+	md.ThumbPath = path
+}

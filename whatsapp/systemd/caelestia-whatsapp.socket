@@ -1,0 +1,16 @@
+[Unit]
+Description=Socket de ativação do WhatsApp daemon (EXPERIMENTAL)
+Documentation=https://github.com/stoltembergg-png/caelestia-whatsapp
+# ATENÇÃO: experimental. O daemon atual NÃO implementa socket activation
+# (não lê o FD passado pelo systemd via go-systemd/v22/activation) e ainda
+# remove/cria o socket sozinho, o que conflita com este unit. Não habilite
+# este socket ao mesmo tempo que o serviço. O modo suportado é o serviço
+# ativo (caelestia-whatsapp.service). Veja docs/BUILD.md.
+
+[Socket]
+ListenStream=%t/caelestia-whatsapp.sock
+SocketMode=0600
+Accept=no
+
+[Install]
+WantedBy=sockets.target

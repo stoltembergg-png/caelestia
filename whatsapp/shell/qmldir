@@ -1,0 +1,19 @@
+module qs.extras.whatsapp
+
+singleton WhatsAppClient 1.0 services/WhatsAppClient.qml
+singleton WhatsAppState 1.0 services/WhatsAppState.qml
+singleton WhatsAppSettings 1.0 services/WhatsAppSettings.qml
+singleton WhatsAppNotifier 1.0 services/WhatsAppNotifier.qml
+Drawer 1.0 modules/whatsapp/Drawer.qml
+WhatsAppPanel 1.0 modules/whatsapp/WhatsAppPanel.qml
+ChatList 1.0 modules/whatsapp/ChatList.qml
+ChatView 1.0 modules/whatsapp/ChatView.qml
+MessageBubble 1.0 modules/whatsapp/MessageBubble.qml
+MediaContent 1.0 modules/whatsapp/MediaContent.qml
+MediaViewer 1.0 modules/whatsapp/MediaViewer.qml
+MessageContextMenu 1.0 modules/whatsapp/MessageContextMenu.qml
+MessageComposer 1.0 modules/whatsapp/MessageComposer.qml
+ContactAvatar 1.0 modules/whatsapp/ContactAvatar.qml
+LoginView 1.0 modules/whatsapp/LoginView.qml
+WhatsAppBarItem 1.0 modules/whatsapp/WhatsAppBarItem.qml
+WhatsAppSettingsPage 1.0 modules/whatsapp/WhatsAppSettingsPage.qml
