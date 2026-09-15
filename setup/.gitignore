@@ -1,0 +1,16 @@
+.worktrees/
+*.log
+logs/
+rendered/
+*.rendered
+*.bak
+*.backup
+backups/
+wallpapers/
+*.wallpaper
+.env
+.env.*
+build/
+dist/
+target/
+*.so

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+: "${FIXTURE_AUDIT:?FIXTURE_AUDIT must be set}"
+printf 'sudo %s\n' "$*" >> "$FIXTURE_AUDIT"

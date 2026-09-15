@@ -1,0 +1,32 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+if [[ -n "${PACKAGE_QUERY_AUDIT:-}" ]]; then
+  printf 'pacman %q\n' "$*" >> "$PACKAGE_QUERY_AUDIT"
+fi
+
+contains_package() {
+  local wanted="$1" package
+  for package in ${2:-}; do
+    [[ "$package" == "$wanted" ]] && return 0
+  done
+  return 1
+}
+
+case "${1:-}" in
+  -Q)
+    contains_package "${2:?package required}" "${FAKE_PACMAN_INSTALLED:-}"
+    ;;
+  -Si)
+    contains_package "${2:?package required}" "${FAKE_PACMAN_AVAILABLE:-}"
+    ;;
+  -Syu)
+    printf 'pacman' >> "${PACKAGE_AUDIT:?PACKAGE_AUDIT must be set}"
+    printf ' %q' "$@" >> "$PACKAGE_AUDIT"
+    printf '\n' >> "$PACKAGE_AUDIT"
+    ;;
+  *)
+    printf 'unexpected pacman argv: %s\n' "$*" >&2
+    exit 64
+    ;;
+esac

@@ -1,0 +1,7 @@
+# AUR packages are explicit and must be availability-checked before install.
+caelestia-cli
+caelestia-shell
+quickshell-git
+qt6-m3shapes-git
+ttf-rubik-vf
+zen-browser-bin

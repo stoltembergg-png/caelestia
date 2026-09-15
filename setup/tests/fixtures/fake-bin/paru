@@ -1,0 +1,29 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+if [[ -n "${PACKAGE_QUERY_AUDIT:-}" ]]; then
+  printf 'paru %q\n' "$*" >> "$PACKAGE_QUERY_AUDIT"
+fi
+
+contains_package() {
+  local wanted="$1" package
+  for package in ${2:-}; do
+    [[ "$package" == "$wanted" ]] && return 0
+  done
+  return 1
+}
+
+case "${1:-}" in
+  -Si)
+    contains_package "${2:?package required}" "${FAKE_PARU_AVAILABLE:-}"
+    ;;
+  -S)
+    printf 'paru' >> "${PACKAGE_AUDIT:?PACKAGE_AUDIT must be set}"
+    printf ' %q' "$@" >> "$PACKAGE_AUDIT"
+    printf '\n' >> "$PACKAGE_AUDIT"
+    ;;
+  *)
+    printf 'unexpected paru argv: %s\n' "$*" >&2
+    exit 64
+    ;;
+esac
