@@ -603,7 +603,7 @@ Singleton {
         if (now - last < notifyCooldownSecs * 1000)
             return;
         _notifyCooldowns[key] = now;
-        let view = (kind === "handoff" || kind === "server") ? "activity" : "limits";
+        let view = "limits";
         sendNotification("No Limits", text, view);
     }
 

@@ -1,5 +1,5 @@
 // Portado de Serpantinum: src/quickshell/kodexbar/KodexBarPopup.qml (AGPL-3.0)
-// Port 1:1 da UI (3 abas: Limits/Activity/Settings). Adaptações de port:
+// Popup somente de Limits. Adaptações de port:
 //  - imports relativos do Serpantinum -> shims qs.extras / qs.extras.reusables;
 //  - sem dependência da janela da barra/IPC: o host (NoLimitsOverlay ou o popout
 //    nativo da barra) controla a visibilidade e lê NoLimits.visible /
@@ -26,6 +26,10 @@ Item {
 
     property real introMain: 1
     property string activeView: "limits"
+    onActiveViewChanged: {
+        if (activeView !== "limits")
+            activeView = "limits";
+    }
 
     readonly property string displayMode: NoLimits.displayMode
     readonly property var disabledList: NoLimits.disabledList
@@ -153,7 +157,7 @@ Item {
         onTriggered: window.forceActiveFocus()
     }
 
-    readonly property var viewIds: ["limits", "activity", "settings"]
+    readonly property var viewIds: ["limits"]
     readonly property int viewIndex: Math.max(0, viewIds.indexOf(activeView))
     property int pendingViewIndex: -1
 
@@ -162,10 +166,6 @@ Item {
     // sobrar fundo vazio embaixo. As Flickables expõem contentHeight; o
     // StackLayout em si não contribui (implicitHeight 0).
     readonly property real viewHeight: {
-        if (viewIndex === 1)
-            return activityFlick.contentHeight;
-        if (viewIndex === 2)
-            return settingsFlick.contentHeight;
         return flick.contentHeight;
     }
     readonly property real contentHeight: panelLayout.implicitHeight + viewHeight
@@ -314,20 +314,6 @@ Item {
                         Layout.preferredHeight: window.s(26)
                         Layout.alignment: Qt.AlignVCenter
                         cornerRadius: Math.max(0, ThemeBackend.borderRadius - window.s(3))
-                        buttonIcon: "󰒓"
-                        iconFontSize: window.s(12)
-                        accentColor: window.activeView === "settings"
-                            ? Qt.rgba(ThemeBackend.surface2.r, ThemeBackend.surface2.g, ThemeBackend.surface2.b, 0.9)
-                            : Qt.rgba(ThemeBackend.surface1.r, ThemeBackend.surface1.g, ThemeBackend.surface1.b, 0.6)
-                        textColor: isHoveredOrHighlighted ? ThemeBackend.text : ThemeBackend.overlay1
-                        onClicked: window.switchView(window.activeView === "settings" ? "limits" : "settings")
-                    }
-
-                    IconButton {
-                        Layout.preferredWidth: window.s(26)
-                        Layout.preferredHeight: window.s(26)
-                        Layout.alignment: Qt.AlignVCenter
-                        cornerRadius: Math.max(0, ThemeBackend.borderRadius - window.s(3))
                         buttonIcon: "󰑐"
                         iconFontSize: window.s(12)
                         iconOffsetX: window.s(1)
@@ -335,47 +321,6 @@ Item {
                         textColor: isHoveredOrHighlighted ? ThemeBackend.text : ThemeBackend.overlay1
                         onClicked: window.refresh()
                     }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: window.s(6)
-
-                    Repeater {
-                        model: [
-                            { id: "limits", label: I18n.t("kodexbar.limits") },
-                            { id: "activity", label: I18n.t("kodexbar.activity") }
-                        ]
-
-                        delegate: Rectangle {
-                            Layout.alignment: Qt.AlignVCenter
-                            property bool active: window.activeView === modelData.id
-                            implicitWidth: segText.implicitWidth + window.s(16)
-                            implicitHeight: window.s(20)
-                            radius: height / 2
-                            color: active ? window.chipFill : "transparent"
-
-                            Text {
-                                id: segText
-                                anchors.centerIn: parent
-                                text: modelData.label
-                                font.family: ThemeBackend.fontFamily
-                                font.weight: parent.active ? Font.Bold : Font.Normal
-                                font.pixelSize: window.s(10)
-                                color: parent.active ? ThemeBackend.text : ThemeBackend.overlay1
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    window.switchView(modelData.id);
-                                }
-                            }
-                        }
-                    }
-
-                    Item { Layout.fillWidth: true }
                 }
 
                 Rectangle {
@@ -651,381 +596,6 @@ Item {
                     }
                 }
 
-                Flickable {
-                    id: activityFlick
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    contentWidth: width
-                    contentHeight: activityColumn.implicitHeight
-                    boundsBehavior: Flickable.StopAtBounds
-
-                    ColumnLayout {
-                        id: activityColumn
-                        width: activityFlick.width
-                        spacing: window.s(9)
-
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: consumptionCol.implicitHeight + window.s(18)
-                            radius: window.s(14)
-                            color: ThemeBackend.surface0
-
-                            ColumnLayout {
-                                id: consumptionCol
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.leftMargin: window.s(12)
-                                anchors.rightMargin: window.s(12)
-                                spacing: window.s(7)
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: window.s(7)
-
-                                    Text {
-                                        Layout.alignment: Qt.AlignVCenter
-                                        text: I18n.t("kodexbar.consumption")
-                                        font.family: ThemeBackend.fontFamily
-                                        font.weight: Font.Bold
-                                        font.pixelSize: window.s(11)
-                                        color: ThemeBackend.text
-                                    }
-
-                                    Item { Layout.fillWidth: true }
-
-                                    Text {
-                                        Layout.alignment: Qt.AlignVCenter
-                                        visible: NoLimits.historySpanHours() < 1
-                                        text: I18n.t("kodexbar.collecting")
-                                        font.family: ThemeBackend.fontFamily
-                                        font.pixelSize: window.s(9)
-                                        color: ThemeBackend.overlay1
-                                    }
-                                }
-
-                                Repeater {
-                                    model: NoLimits.providers
-
-                                    delegate: RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: window.s(7)
-
-                                        Image {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            visible: source !== ""
-                                            source: window.providerIcon(modelData.provider)
-                                            sourceSize.width: window.s(16)
-                                            sourceSize.height: window.s(16)
-                                            Layout.preferredWidth: window.s(16)
-                                            Layout.preferredHeight: window.s(16)
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                        }
-
-                                        Text {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            text: window.providerName(modelData.provider)
-                                            font.family: ThemeBackend.fontFamily
-                                            font.weight: Font.Bold
-                                            font.pixelSize: window.s(10)
-                                            color: ThemeBackend.text
-                                        }
-
-                                        Rectangle {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            visible: (NoLimits.delta24h(modelData.provider) || 0) > 0
-                                            radius: height / 2
-                                            color: window.chipFill
-                                            implicitWidth: deltaText.implicitWidth + window.s(10)
-                                            implicitHeight: window.s(14)
-
-                                            Text {
-                                                id: deltaText
-                                                anchors.centerIn: parent
-                                                text: {
-                                                    let d = NoLimits.delta24h(modelData.provider);
-                                                    return d === null ? "" : ("+" + d + "%");
-                                                }
-                                                font.family: ThemeBackend.fontFamily
-                                                font.pixelSize: window.s(8)
-                                                color: window.severityColor(NoLimits.severityFor(NoLimits.delta24h(modelData.provider), modelData.provider))
-                                            }
-                                        }
-
-                                        Item { Layout.fillWidth: true }
-
-                                        Text {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            text: {
-                                                let n = NoLimits.sessionsForProvider(modelData.provider);
-                                                if (n <= 0) return I18n.t("kodexbar.no_sessions_short");
-                                                return (n === 1) ? I18n.t("kodexbar.sessions_one") : I18n.t("kodexbar.sessions_n", { n: n });
-                                            }
-                                            font.family: ThemeBackend.fontFamily
-                                            font.pixelSize: window.s(9)
-                                            color: ThemeBackend.overlay1
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: eventsCol.implicitHeight + window.s(18)
-                            visible: NoLimits.events.length > 0
-                            radius: window.s(14)
-                            color: ThemeBackend.surface0
-
-                            ColumnLayout {
-                                id: eventsCol
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.leftMargin: window.s(12)
-                                anchors.rightMargin: window.s(12)
-                                spacing: window.s(6)
-
-                                Text {
-                                    Layout.alignment: Qt.AlignVCenter
-                                    text: I18n.t("kodexbar.events")
-                                    font.family: ThemeBackend.fontFamily
-                                    font.weight: Font.Bold
-                                    font.pixelSize: window.s(11)
-                                    color: ThemeBackend.text
-                                }
-
-                                Repeater {
-                                    model: NoLimits.events.slice(0, 8)
-
-                                    delegate: Rectangle {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: window.s(26)
-                                        radius: window.s(10)
-                                        color: window.chipFill
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: window.s(10)
-                                            anchors.rightMargin: window.s(10)
-                                            spacing: window.s(6)
-
-                                            Rectangle {
-                                                Layout.alignment: Qt.AlignVCenter
-                                                width: window.s(6)
-                                                height: width
-                                                radius: width / 2
-                                                color: window.severityColor(modelData.severity)
-                                            }
-
-                                            Text {
-                                                Layout.fillWidth: true
-                                                Layout.alignment: Qt.AlignVCenter
-                                                text: modelData.text || ""
-                                                font.family: ThemeBackend.fontFamily
-                                                font.pixelSize: window.s(10)
-                                                color: ThemeBackend.text
-                                                elide: Text.ElideRight
-                                            }
-
-                                            Text {
-                                                Layout.alignment: Qt.AlignVCenter
-                                                text: NoLimits.fmtWhen(new Date(modelData.t).toISOString())
-                                                font.family: ThemeBackend.fontFamily
-                                                font.pixelSize: window.s(8)
-                                                color: ThemeBackend.overlay1
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: costCol.implicitHeight + window.s(18)
-                            visible: NoLimits.cost.length > 0
-                            radius: window.s(14)
-                            color: ThemeBackend.surface0
-
-                            ColumnLayout {
-                                id: costCol
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.leftMargin: window.s(12)
-                                anchors.rightMargin: window.s(12)
-                                spacing: window.s(7)
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: window.s(7)
-
-                                    Text {
-                                        Layout.alignment: Qt.AlignVCenter
-                                        text: I18n.t("kodexbar.cost_30d")
-                                        font.family: ThemeBackend.fontFamily
-                                        font.weight: Font.Bold
-                                        font.pixelSize: window.s(11)
-                                        color: ThemeBackend.text
-                                    }
-
-                                    Item { Layout.fillWidth: true }
-
-                                    Text {
-                                        Layout.alignment: Qt.AlignVCenter
-                                        text: NoLimits.fmtUsd(NoLimits.costTotal())
-                                        font.family: ThemeBackend.fontFamily
-                                        font.weight: Font.Bold
-                                        font.pixelSize: window.s(11)
-                                        color: ThemeBackend.text
-                                    }
-                                }
-
-                                Repeater {
-                                    model: NoLimits.cost
-
-                                    delegate: RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: window.s(6)
-
-                                        Text {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            text: window.providerName(modelData.provider)
-                                            font.family: ThemeBackend.fontFamily
-                                            font.pixelSize: window.s(10)
-                                            color: ThemeBackend.subtext0
-                                        }
-
-                                        Item { Layout.fillWidth: true }
-
-                                        Text {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            visible: modelData.projects && modelData.projects.length > 0
-                                            text: (modelData.projects && modelData.projects.length > 0) ? modelData.projects[0].name : ""
-                                            font.family: ThemeBackend.fontFamily
-                                            font.pixelSize: window.s(8)
-                                            color: ThemeBackend.overlay1
-                                            elide: Text.ElideRight
-                                            Layout.maximumWidth: window.s(140)
-                                        }
-
-                                        Text {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            text: NoLimits.fmtUsd(modelData.cost)
-                                            font.family: ThemeBackend.fontFamily
-                                            font.pixelSize: window.s(10)
-                                            color: ThemeBackend.text
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: sessionsCol.implicitHeight + window.s(18)
-                            radius: window.s(14)
-                            color: ThemeBackend.surface0
-
-                            ColumnLayout {
-                                id: sessionsCol
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.leftMargin: window.s(12)
-                                anchors.rightMargin: window.s(12)
-                                spacing: window.s(7)
-
-                                Text {
-                                    Layout.alignment: Qt.AlignVCenter
-                                    text: I18n.t("kodexbar.sessions_recent")
-                                    font.family: ThemeBackend.fontFamily
-                                    font.weight: Font.Bold
-                                    font.pixelSize: window.s(11)
-                                    color: ThemeBackend.text
-                                }
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    visible: NoLimits.sessionList.length === 0
-                                    text: I18n.t("kodexbar.no_sessions")
-                                    font.family: ThemeBackend.fontFamily
-                                    font.pixelSize: window.s(10)
-                                    color: ThemeBackend.overlay1
-                                }
-
-                                Repeater {
-                                    model: NoLimits.sessionList.slice(0, 8)
-
-                                    delegate: Rectangle {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: window.s(30)
-                                        radius: window.s(10)
-                                        color: window.chipFill
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: window.s(10)
-                                            anchors.rightMargin: window.s(10)
-                                            spacing: window.s(6)
-
-                                            Text {
-                                                Layout.alignment: Qt.AlignVCenter
-                                                text: window.providerName(NoLimits.agentProvider(modelData.agent_kind))
-                                                font.family: ThemeBackend.fontFamily
-                                                font.weight: Font.Bold
-                                                font.pixelSize: window.s(10)
-                                                color: ThemeBackend.text
-                                            }
-
-                                            Rectangle {
-                                                Layout.alignment: Qt.AlignVCenter
-                                                visible: (modelData.project || "") !== ""
-                                                radius: height / 2
-                                                color: window.chipFill
-                                                implicitWidth: projectText.implicitWidth + window.s(10)
-                                                implicitHeight: window.s(14)
-
-                                                Text {
-                                                    id: projectText
-                                                    anchors.centerIn: parent
-                                                    text: modelData.project || ""
-                                                    font.family: ThemeBackend.fontFamily
-                                                    font.pixelSize: window.s(8)
-                                                    color: ThemeBackend.overlay2
-                                                    elide: Text.ElideRight
-                                                }
-                                            }
-
-                                            Item { Layout.fillWidth: true }
-
-                                            Text {
-                                                Layout.alignment: Qt.AlignVCenter
-                                                text: modelData.ended_at ? NoLimits.fmtWhen(modelData.started_at) : I18n.t("kodexbar.running")
-                                                font.family: ThemeBackend.fontFamily
-                                                font.pixelSize: window.s(8)
-                                                color: ThemeBackend.overlay1
-                                            }
-
-                                            Text {
-                                                Layout.alignment: Qt.AlignVCenter
-                                                text: (modelData.observation_count !== undefined && modelData.observation_count !== null) ? ("" + modelData.observation_count) : ""
-                                                font.family: ThemeBackend.fontFamily
-                                                font.pixelSize: window.s(8)
-                                                color: ThemeBackend.overlay0
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
                 Flickable {
                     id: settingsFlick
                     Layout.fillWidth: true
