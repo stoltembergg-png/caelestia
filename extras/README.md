@@ -43,6 +43,16 @@ O `install.sh` copia `src/extras/`, insere o `Loader` no `shell.qml`, adiciona o
 
 Para o WhatsApp, garanta o build patchado: `./scripts/build-quickshell-webview.sh` (ver `docs/QUICKSHELL-WEBVIEW.md`).
 
+## Verificação de i18n
+
+O guard de integridade das traduções valida: paridade de chaves-folha entre os idiomas de cada diretório de idiomas (serpantinum `en == pt == es`; extras `en == pt`), ausência de valores vazios, resolução de **toda** chave usada via `I18n.t()`/`Extras.I18n.t()` em `en.json` e `pt.json`, e ausência de `qsTr()` morto (não há `.ts` no repo).
+
+```bash
+./scripts/check-i18n.sh
+```
+
+Sai com `0` se tudo OK e `1` em qualquer divergência (útil antes de commit ou em CI). Chaves montadas dinamicamente por concatenação estão listadas no próprio script (`DYNAMIC_PREFIX`, ex.: `whatsapp.chat_list.weekdays.`).
+
 ## Licença e procedência
 
 Os componentes derivam do **Serpantinum** (AGPL-3.0). Este repositório é **AGPL-3.0** (ver `LICENSE`); combinado com o Caelestia (GPL-3.0), a distribuição combinada deve atender à **AGPL-3.0**. O patch do Quickshell deriva do upstream (GPL-3.0).
