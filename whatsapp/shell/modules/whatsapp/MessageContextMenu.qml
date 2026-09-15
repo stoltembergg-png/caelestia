@@ -11,6 +11,7 @@ import Caelestia.Config
 import qs.components
 import qs.components.effects
 import qs.services
+import qs.extras
 
 Item {
     id: root
@@ -116,7 +117,7 @@ Item {
 
                     StyledText {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Responder")
+                        text: I18n.t("whatsapp.context_menu.reply")
                         font: Tokens.font.body.small
                     }
                 }
@@ -153,7 +154,7 @@ Item {
 
                     StyledText {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Abrir no sistema")
+                        text: I18n.t("whatsapp.context_menu.open_system")
                         font: Tokens.font.body.small
                     }
                 }

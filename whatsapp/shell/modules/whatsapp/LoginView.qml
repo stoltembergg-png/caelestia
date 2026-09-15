@@ -12,6 +12,7 @@ import Caelestia.Config
 import qs.components
 import qs.components.controls
 import qs.services
+import qs.extras
 import qs.extras.whatsapp
 
 Item {
@@ -47,7 +48,7 @@ Item {
         StyledText {
             Layout.fillWidth: true
             visible: !root.hasQr
-            text: "Pareie seu WhatsApp"
+            text: I18n.t("whatsapp.login.title")
             color: Colours.palette.m3onSurface
             font: Tokens.font.title.medium
             horizontalAlignment: Text.AlignHCenter
@@ -56,7 +57,7 @@ Item {
         StyledText {
             Layout.fillWidth: true
             visible: !root.hasQr
-            text: "Abra o WhatsApp no celular, toque em Dispositivos conectados e aponte a câmera para o código."
+            text: I18n.t("whatsapp.login.instructions")
             color: Colours.palette.m3onSurfaceVariant
             font: Tokens.font.body.small
             horizontalAlignment: Text.AlignHCenter
@@ -99,7 +100,7 @@ Item {
         StyledText {
             Layout.fillWidth: true
             visible: !root.hasQr
-            text: "Gerando código…"
+            text: I18n.t("whatsapp.login.generating")
             color: Colours.palette.m3onSurfaceVariant
             font: Tokens.font.body.small
             horizontalAlignment: Text.AlignHCenter
@@ -109,7 +110,7 @@ Item {
             Layout.alignment: Qt.AlignHCenter
             visible: !root.hasQr
             type: TextButton.Filled
-            text: "Conectar dispositivo"
+            text: I18n.t("whatsapp.login.connect_device")
             onClicked: root.start()
         }
 
@@ -117,7 +118,7 @@ Item {
             Layout.alignment: Qt.AlignHCenter
             visible: root.hasQr
             type: TextButton.Text
-            text: "Gerar novo código"
+            text: I18n.t("whatsapp.login.new_code")
             onClicked: root.start()
         }
 

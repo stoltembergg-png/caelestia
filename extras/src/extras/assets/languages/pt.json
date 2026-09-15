@@ -233,5 +233,113 @@
     "memory_save": "Salvar",
     "memory_saved": "salva",
     "running": "em andamento"
+  },
+  "whatsapp": {
+    "login": {
+      "title": "Pareie seu WhatsApp",
+      "instructions": "Abra o WhatsApp no celular, toque em Dispositivos conectados e aponte a câmera para o código.",
+      "generating": "Gerando código…",
+      "connect_device": "Conectar dispositivo",
+      "new_code": "Gerar novo código"
+    },
+    "chat_list": {
+      "now": "agora",
+      "minutes": "{n} min",
+      "yesterday": "ontem",
+      "empty_preview": "—",
+      "empty_logged_in": "Nenhuma conversa ainda",
+      "empty_logged_out": "Conecte um dispositivo para começar",
+      "weekdays": {
+        "sun": "dom",
+        "mon": "seg",
+        "tue": "ter",
+        "wed": "qua",
+        "thu": "qui",
+        "fri": "sex",
+        "sat": "sáb"
+      }
+    },
+    "chat_view": {
+      "today": "Hoje",
+      "yesterday": "Ontem",
+      "empty": "Sem mensagens"
+    },
+    "message": {
+      "deleted": "Mensagem apagada",
+      "you": "Você",
+      "quoted": "Mensagem citada",
+      "edited": "editada",
+      "message": "Mensagem"
+    },
+    "composer": {
+      "read_file_failed": "Não foi possível ler o arquivo",
+      "file_too_large": "Arquivo maior que 100 MB",
+      "unsupported_file": "Tipo de arquivo não suportado",
+      "file_title": "Enviar arquivo",
+      "attachment": "Anexo",
+      "caption_placeholder": "Adicione uma legenda…",
+      "reply_placeholder": "Responder…",
+      "message_placeholder": "Mensagem"
+    },
+    "context_menu": {
+      "reply": "Responder",
+      "open_system": "Abrir no sistema"
+    },
+    "media": {
+      "photo": "Foto",
+      "video": "Vídeo",
+      "audio": "Áudio",
+      "document": "Documento",
+      "sticker": "Figurinha",
+      "location": "Localização",
+      "contact": "Contato",
+      "reaction": "Reação",
+      "upload_failed": "Falha ao enviar",
+      "retry": "Tentar de novo",
+      "discard": "Descartar",
+      "download_failed": "Falha ao baixar · tentar de novo"
+    },
+    "settings": {
+      "title": "WhatsApp",
+      "connected": "Conectado",
+      "connecting": "Conectando…",
+      "not_paired": "Não pareado",
+      "offline": "Offline",
+      "status": "Estado",
+      "connection": "Conexão",
+      "account": "Conta",
+      "no_account": "—",
+      "unread": "Mensagens não lidas",
+      "actions": "Ações",
+      "connect_qr": "Conectar por QR code",
+      "connect_qr_hint": "Gerar um novo código de pareamento",
+      "open_panel": "Abrir painel",
+      "open_panel_hint": "Mostrar o drawer do WhatsApp",
+      "confirm_logout": "Confirmar logout",
+      "logout": "Sair",
+      "confirm_logout_hint": "Toque de novo para desconectar",
+      "unlink_device": "Desvincular este dispositivo",
+      "preferences": "Preferências",
+      "notifications": "Notificações",
+      "notifications_desc": "Avisar sobre novas mensagens recebidas",
+      "open_on_hover": "Abrir ao passar o mouse",
+      "open_on_hover_desc": "Abrir o painel ao aproximar o cursor da borda da barra",
+      "compact_mode": "Modo compacto",
+      "compact_mode_desc": "Densidade menor na lista e nas conversas"
+    },
+    "notifications": {
+      "new_message": "Nova mensagem",
+      "open": "Abrir"
+    },
+    "shortcuts": {
+      "toggle_drawer": "Alternar drawer do WhatsApp"
+    },
+    "client": {
+      "qr_timeout": "tempo esgotado ao gerar o código; tente de novo",
+      "auth_error": "erro de autenticação",
+      "group": "Grupo",
+      "contact_number": "Contato {n}",
+      "contact": "Contato"
+    }
   }
 }

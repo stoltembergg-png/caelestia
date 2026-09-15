@@ -13,6 +13,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.components.misc
+import qs.extras
 import qs.extras.whatsapp
 
 Singleton {
@@ -68,7 +69,7 @@ Singleton {
     // Atalho global `caelestia:whatsapp` (bind no Hyprland).
     CustomShortcut {
         name: "whatsapp"
-        description: "Toggle WhatsApp drawer"
+        description: I18n.t("whatsapp.shortcuts.toggle_drawer")
         onPressed: root.toggle()
     }
 }

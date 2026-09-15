@@ -13,6 +13,7 @@ import Caelestia.Config
 import qs.components
 import qs.components.containers
 import qs.services
+import qs.extras
 import qs.extras.whatsapp
 
 Item {
@@ -135,9 +136,9 @@ Item {
                             const a = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
                             const t = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
                             if (a === t)
-                                return "Hoje";
+                                return I18n.t("whatsapp.chat_view.today");
                             if (a === t - 86400000)
-                                return "Ontem";
+                                return I18n.t("whatsapp.chat_view.yesterday");
                             return Qt.formatDateTime(d, "dd/MM/yyyy");
                         }
 
@@ -224,7 +225,7 @@ Item {
 
                 StyledText {
                     Layout.fillWidth: true
-                    text: "Sem mensagens"
+                    text: I18n.t("whatsapp.chat_view.empty")
                     color: Colours.palette.m3onSurfaceVariant
                     font: Tokens.font.body.medium
                     horizontalAlignment: Text.AlignHCenter

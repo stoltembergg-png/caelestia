@@ -15,12 +15,13 @@ import Caelestia.Config
 import qs.components
 import qs.services
 import qs.modules.nexus.common
+import qs.extras
 import qs.extras.whatsapp
 
 PageBase {
     id: root
 
-    title: qsTr("WhatsApp")
+    title: I18n.t("whatsapp.settings.title")
 
     readonly property bool paired: WhatsAppClient.paired
 
@@ -28,12 +29,12 @@ PageBase {
 
     function connectionLabel(): string {
         if (WhatsAppClient.connectionState === "connected")
-            return qsTr("Conectado");
+            return I18n.t("whatsapp.settings.connected");
         if (WhatsAppClient.connectionState === "connecting")
-            return qsTr("Conectando…");
+            return I18n.t("whatsapp.settings.connecting");
         if (WhatsAppClient.connectionState === "needs_pairing")
-            return qsTr("Não pareado");
-        return qsTr("Offline");
+            return I18n.t("whatsapp.settings.not_paired");
+        return I18n.t("whatsapp.settings.offline");
     }
 
     function requestLogout(): void {
@@ -66,28 +67,28 @@ PageBase {
         // -------------------------------------------------------------- //
         SectionHeader {
             first: true
-            text: qsTr("Estado")
+            text: I18n.t("whatsapp.settings.status")
         }
 
         InfoRow {
             first: true
             icon: root.paired ? "check_circle" : "link_off"
             iconColour: root.paired ? Colours.palette.m3success : Colours.palette.m3error
-            label: qsTr("Conexão")
+            label: I18n.t("whatsapp.settings.connection")
             value: root.connectionLabel()
         }
 
         InfoRow {
             icon: "account_circle"
-            label: qsTr("Conta")
-            value: WhatsAppClient.pushName.length > 0 ? WhatsAppClient.pushName : qsTr("—")
+            label: I18n.t("whatsapp.settings.account")
+            value: WhatsAppClient.pushName.length > 0 ? WhatsAppClient.pushName : I18n.t("whatsapp.settings.no_account")
             subtext: WhatsAppClient.accountJid
         }
 
         InfoRow {
             last: true
             icon: "mark_chat_unread"
-            label: qsTr("Mensagens não lidas")
+            label: I18n.t("whatsapp.settings.unread")
             value: String(WhatsAppClient.unreadCount)
         }
 
@@ -95,31 +96,31 @@ PageBase {
         // Ações
         // -------------------------------------------------------------- //
         SectionHeader {
-            text: qsTr("Ações")
+            text: I18n.t("whatsapp.settings.actions")
         }
 
         RowButton {
             first: true
             visible: !root.paired
             icon: "qr_code_2"
-            text: qsTr("Conectar por QR code")
-            subtext: qsTr("Gerar um novo código de pareamento")
+            text: I18n.t("whatsapp.settings.connect_qr")
+            subtext: I18n.t("whatsapp.settings.connect_qr_hint")
             onClicked: WhatsAppClient.startLogin()
         }
 
         RowButton {
             first: root.paired
             icon: "open_in_new"
-            text: qsTr("Abrir painel")
-            subtext: qsTr("Mostrar o drawer do WhatsApp")
+            text: I18n.t("whatsapp.settings.open_panel")
+            subtext: I18n.t("whatsapp.settings.open_panel_hint")
             onClicked: WhatsAppState.show()
         }
 
         RowButton {
             last: true
             icon: "logout"
-            text: root._confirmLogout ? qsTr("Confirmar logout") : qsTr("Sair")
-            subtext: root._confirmLogout ? qsTr("Toque de novo para desconectar") : qsTr("Desvincular este dispositivo")
+            text: root._confirmLogout ? I18n.t("whatsapp.settings.confirm_logout") : I18n.t("whatsapp.settings.logout")
+            subtext: root._confirmLogout ? I18n.t("whatsapp.settings.confirm_logout_hint") : I18n.t("whatsapp.settings.unlink_device")
             disabled: !root.paired
             onClicked: root.requestLogout()
         }
@@ -128,28 +129,28 @@ PageBase {
         // Preferências
         // -------------------------------------------------------------- //
         SectionHeader {
-            text: qsTr("Preferências")
+            text: I18n.t("whatsapp.settings.preferences")
         }
 
         ToggleRow {
             first: true
-            text: qsTr("Notificações")
-            subtext: qsTr("Avisar sobre novas mensagens recebidas")
+            text: I18n.t("whatsapp.settings.notifications")
+            subtext: I18n.t("whatsapp.settings.notifications_desc")
             checked: WhatsAppSettings.getBool("notifications", true)
             onToggled: WhatsAppSettings.set("notifications", checked)
         }
 
         ToggleRow {
-            text: qsTr("Abrir ao passar o mouse")
-            subtext: qsTr("Abrir o painel ao aproximar o cursor da borda da barra")
+            text: I18n.t("whatsapp.settings.open_on_hover")
+            subtext: I18n.t("whatsapp.settings.open_on_hover_desc")
             checked: WhatsAppSettings.getBool("openOnHover", true)
             onToggled: WhatsAppSettings.set("openOnHover", checked)
         }
 
         ToggleRow {
             last: true
-            text: qsTr("Modo compacto")
-            subtext: qsTr("Densidade menor na lista e nas conversas")
+            text: I18n.t("whatsapp.settings.compact_mode")
+            subtext: I18n.t("whatsapp.settings.compact_mode_desc")
             checked: WhatsAppSettings.getBool("compactMode", false)
             onToggled: WhatsAppSettings.set("compactMode", checked)
         }

@@ -17,6 +17,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.services
+import qs.extras
 import qs.extras.whatsapp
 
 Singleton {
@@ -51,7 +52,7 @@ Singleton {
         root._cooldowns[key] = now;
 
         const summary = (name && name.length) ? name : "WhatsApp";
-        let body = (preview && preview.length) ? preview : "Nova mensagem";
+        let body = (preview && preview.length) ? preview : I18n.t("whatsapp.notifications.new_message");
         if (body.length > 140)
             body = body.substring(0, 139) + "…";
 
@@ -61,7 +62,7 @@ Singleton {
             "--object-path", "/org/freedesktop/Notifications",
             "--method", "org.freedesktop.Notifications.Notify",
             "WhatsApp", "0", "", summary, body,
-            '["default","Abrir"]', "{}", "5000"
+            '["default","' + I18n.t("whatsapp.notifications.open") + '"]', "{}", "5000"
         ];
         notifyProc.running = false;
         notifyProc.running = true;

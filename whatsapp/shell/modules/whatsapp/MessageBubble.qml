@@ -12,6 +12,7 @@ import QtQuick.Shapes
 import Caelestia.Config
 import qs.components
 import qs.services
+import qs.extras
 import qs.extras.whatsapp
 
 Item {
@@ -60,7 +61,7 @@ Item {
     TextMetrics {
         id: bodyMetrics
 
-        text: root.deleted ? "Mensagem apagada" : root.text
+        text: root.deleted ? I18n.t("whatsapp.message.deleted") : root.text
         font: root._bodyFont
     }
 
@@ -94,11 +95,11 @@ Item {
 
     function typeLabel(): string {
         const labels = {
-            "location": "Localização",
-            "contact": "Contato",
-            "unknown": "Mensagem"
+            "location": I18n.t("whatsapp.media.location"),
+            "contact": I18n.t("whatsapp.media.contact"),
+            "unknown": I18n.t("whatsapp.message.message")
         };
-        return labels[root.type] || "Mensagem";
+        return labels[root.type] || I18n.t("whatsapp.message.message");
     }
 
     function statusIcon(): string {
@@ -212,7 +213,7 @@ Item {
 
                     StyledText {
                         width: parent.width
-                        text: root.quotedFromMe ? "Você" : WhatsAppClient._chatName(root.chat)
+                        text: root.quotedFromMe ? I18n.t("whatsapp.message.you") : WhatsAppClient._chatName(root.chat)
                         color: root.fromMe ? Colours.palette.m3onPrimaryContainer : Colours.palette.m3primary
                         font: Tokens.font.label.small
                         elide: Text.ElideRight
@@ -221,7 +222,7 @@ Item {
 
                     StyledText {
                         width: parent.width
-                        text: root.quotedText.length > 0 ? root.quotedText : "Mensagem citada"
+                        text: root.quotedText.length > 0 ? root.quotedText : I18n.t("whatsapp.message.quoted")
                         color: root.fromMe ? Qt.alpha(Colours.palette.m3onPrimaryContainer, 0.85) : Colours.palette.m3onSurfaceVariant
                         font: Tokens.font.body.small
                         elide: Text.ElideRight
@@ -272,7 +273,7 @@ Item {
                 Layout.fillWidth: false
                 Layout.preferredWidth: Math.min(bodyMetrics.advanceWidth, root._maxContentW)
                 visible: root.isText || root.deleted
-                text: root.deleted ? "Mensagem apagada" : root.text
+                text: root.deleted ? I18n.t("whatsapp.message.deleted") : root.text
                 color: root.fromMe ? Colours.palette.m3onPrimaryContainer : Colours.palette.m3onSurface
                 font: root._bodyFont
                 wrapMode: Text.Wrap
@@ -304,7 +305,7 @@ Item {
 
                     StyledText {
                         visible: root.edited && !root.deleted
-                        text: "editada"
+                        text: I18n.t("whatsapp.message.edited")
                         color: root.fromMe ? Colours.palette.m3onPrimaryContainer : Colours.palette.m3onSurfaceVariant
                         font: Tokens.font.label.small
                     }

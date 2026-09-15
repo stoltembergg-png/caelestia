@@ -16,6 +16,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import qs.extras
 import qs.extras.whatsapp
 
 Singleton {
@@ -182,7 +183,7 @@ Singleton {
         onTriggered: {
             if (root.loggedIn || root.authState === "connected" || root.qrPng.length > 0)
                 return;
-            root.lastError = "tempo esgotado ao gerar o código; tente de novo";
+            root.lastError = I18n.t("whatsapp.client.qr_timeout");
             root.authState = "needs_pairing";
         }
     }
@@ -474,7 +475,7 @@ Singleton {
             root.lastError = String(data.reason || "");
             loginWatch.stop();
         } else if (name === "auth.error") {
-            root.lastError = String(data.message || "auth error");
+            root.lastError = String(data.message || I18n.t("whatsapp.client.auth_error"));
             // Um erro de pareamento encerra a tentativa: sai de "connecting"
             // para a UI mostrar o erro com a ação de tentar novamente.
             root.qrPng = "";
@@ -531,13 +532,13 @@ Singleton {
         if (!generic)
             return raw;
         if (isGroup)
-            return "Grupo";
+            return I18n.t("whatsapp.client.group");
         const num = rawNumeric ? raw : local;
         if (isLid)
-            return "Contato " + root._shortTail(num);
+            return I18n.t("whatsapp.client.contact_number", { n: root._shortTail(num) });
         if (/^[0-9]{6,}$/.test(num))
             return "+" + num;
-        return "Contato";
+        return I18n.t("whatsapp.client.contact");
     }
 
     function _field(c, base, key) {
@@ -558,20 +559,20 @@ Singleton {
         if (!m)
             return s;
         const labels = {
-            "image": "Foto",
-            "photo": "Foto",
-            "video": "Vídeo",
-            "audio": "Áudio",
-            "voice": "Áudio",
-            "document": "Documento",
-            "sticker": "Figurinha",
-            "location": "Localização",
-            "contact": "Contato",
-            "reaction": "Reação",
-            "unknown": "Mensagem",
-            "message": "Mensagem"
+            "image": I18n.t("whatsapp.media.photo"),
+            "photo": I18n.t("whatsapp.media.photo"),
+            "video": I18n.t("whatsapp.media.video"),
+            "audio": I18n.t("whatsapp.media.audio"),
+            "voice": I18n.t("whatsapp.media.audio"),
+            "document": I18n.t("whatsapp.media.document"),
+            "sticker": I18n.t("whatsapp.media.sticker"),
+            "location": I18n.t("whatsapp.media.location"),
+            "contact": I18n.t("whatsapp.media.contact"),
+            "reaction": I18n.t("whatsapp.media.reaction"),
+            "unknown": I18n.t("whatsapp.message.message"),
+            "message": I18n.t("whatsapp.message.message")
         };
-        return labels[m[1].toLowerCase()] || "Mensagem";
+        return labels[m[1].toLowerCase()] || I18n.t("whatsapp.message.message");
     }
 
     function _chatRow(c, base) {
@@ -1022,20 +1023,20 @@ Singleton {
 
     function _previewFor(m) {
         if (m.deleted)
-            return "mensagem apagada";
+            return I18n.t("whatsapp.message.deleted").toLowerCase();
         if (m.type && m.type !== "text" && m.type !== "protocol") {
             const labels = {
-                "image": "Foto",
-                "video": "Vídeo",
-                "audio": "Áudio",
-                "document": "Documento",
-                "sticker": "Figurinha",
-                "location": "Localização",
-                "contact": "Contato",
-                "reaction": "Reação",
-                "unknown": "Mensagem"
+                "image": I18n.t("whatsapp.media.photo"),
+                "video": I18n.t("whatsapp.media.video"),
+                "audio": I18n.t("whatsapp.media.audio"),
+                "document": I18n.t("whatsapp.media.document"),
+                "sticker": I18n.t("whatsapp.media.sticker"),
+                "location": I18n.t("whatsapp.media.location"),
+                "contact": I18n.t("whatsapp.media.contact"),
+                "reaction": I18n.t("whatsapp.media.reaction"),
+                "unknown": I18n.t("whatsapp.message.message")
             };
-            return labels[m.type] || "Mensagem";
+            return labels[m.type] || I18n.t("whatsapp.message.message");
         }
         return String(m.text || "");
     }
@@ -1313,11 +1314,11 @@ Singleton {
         if (!jid.length || !p.length)
             return false;
         if (n > root.mediaSizeLimit) {
-            root.lastError = "Arquivo maior que 100 MB";
+            root.lastError = I18n.t("whatsapp.composer.file_too_large");
             return false;
         }
         if (k !== "image" && k !== "video" && k !== "audio" && k !== "document") {
-            root.lastError = "Tipo de arquivo não suportado";
+            root.lastError = I18n.t("whatsapp.composer.unsupported_file");
             return false;
         }
 
