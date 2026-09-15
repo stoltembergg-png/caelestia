@@ -1,0 +1,6 @@
+module qs.extras.dock
+Wrapper 1.0 DockWrapper.qml
+DockPanel 1.0 DockPanel.qml
+# Legado (não usado pela arquitetura L1): mantido apenas para resolução enquanto
+# Extras.qml ainda instancia "Dock {}". Dock.qml não foi alterado.
+Dock 1.0 Dock.qml

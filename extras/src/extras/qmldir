@@ -1,0 +1,13 @@
+singleton ThemeBackend 1.0 compat/ThemeBackend.qml
+singleton Scaler 1.0 compat/Scaler.qml
+singleton Config 1.0 compat/Config.qml
+singleton Caching 1.0 compat/Caching.qml
+singleton I18n 1.0 compat/I18n.qml
+singleton Sounds 1.0 compat/Sounds.qml
+singleton SysData 1.0 compat/SysData.qml
+singleton OsdController 1.0 compat/OsdController.qml
+singleton FloatingController 1.0 compat/FloatingController.qml
+singleton NotesManager 1.0 compat/NotesManager.qml
+singleton NoLimits 1.0 nolimits/NoLimits.qml
+singleton DockState 1.0 dock/DockState.qml
+Extras 1.0 Extras.qml

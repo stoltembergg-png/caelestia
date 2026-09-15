@@ -1,0 +1,203 @@
+{
+  "quickactions": {
+    "systemusage": {
+      "cpu": "CPU",
+      "ram": "RAM",
+      "temp": "Temp",
+      "disk": "Disk",
+      "net": "Net"
+    },
+    "timer": {
+      "tabs": {
+        "timer": "Timer",
+        "stopwatch": "Stopwatch",
+        "pomodoro": "Pomodoro"
+      },
+      "stopwatch": {
+        "lap": "Lap {number}"
+      },
+      "pomodoro": {
+        "phases": {
+          "focus": "Focus",
+          "short_break": "Short break",
+          "long_break": "Long break"
+        },
+        "settings": {
+          "work": "Work (m)",
+          "short_break": "Short break (m)",
+          "long_break": "Long break (m)",
+          "sessions": "Sessions"
+        }
+      },
+      "notification": {
+        "app_name": "Quickshell timer",
+        "timer_finished_title": "Timer finished",
+        "timer_finished_body": "Your timer for {time} has completed.",
+        "focus_complete_title": "Focus complete",
+        "focus_complete_body": "Great job! Time to take a well-deserved break.",
+        "break_over_title": "Break over",
+        "break_over_body": "Break time is up. Let's get back to focus!",
+        "pomo_skipped_title": "Pomodoro skipped",
+        "pomo_skipped_focus_body": "Focus session skipped. Moving to break.",
+        "pomo_skipped_break_body": "Break skipped. Moving back to focus."
+      }
+    },
+    "notepad": {
+      "title": "Notes",
+      "new": "New",
+      "empty_list": "No notes yet.\nTap New to create one.",
+      "untitled": "Untitled note",
+      "tap_to_write": "Tap to write...",
+      "placeholder": "Write in markdown..."
+    }
+  },
+  "guide": {
+    "dock": {
+      "enabled": {
+        "title": "Enable dock",
+        "desc": "Enable floating application dock"
+      },
+      "position": {
+        "title": "Dock position",
+        "desc": "Select the screen edge to anchor the dock",
+        "bottom": "Bottom",
+        "top": "Top",
+        "left": "Left",
+        "right": "Right"
+      },
+      "elements": {
+        "title": "Number of elements",
+        "desc": "Total app shortcuts displayed on the dock"
+      },
+      "size": {
+        "title": "Element size",
+        "desc": "Dimensions of individual app buttons in pixels"
+      },
+      "autohide": {
+        "title": "Auto-hide",
+        "desc": "Hide the dock when not hovering over the screen edge"
+      },
+      "timeout": {
+        "title": "Auto-hide delay",
+        "desc": "Duration before hiding after pointer leaves"
+      },
+      "floating": {
+        "title": "Floating dock",
+        "desc": "Detach dock from screen edge with rounded corners"
+      },
+      "transparency": {
+        "title": "Dock transparency",
+        "desc": "Adjust dock background opacity level"
+      },
+      "apps": {
+        "title": "Dock Applications",
+        "singular": "app",
+        "plural": "apps",
+        "shuffle": "Shuffle Apps",
+        "empty": "No applications configured for the dock",
+        "enter_edit": "Edit",
+        "exit_edit": "Exit edit mode"
+      },
+      "picker": {
+        "search": "Search apps...",
+        "done": "Done",
+        "empty": "No matching applications"
+      },
+      "opacity": {
+        "title": "Dock opacity",
+        "desc": "Adjust dock background opacity level"
+      },
+      "override_bounds": {
+        "title": "Override out-of-screen-bounds size correction",
+        "desc": "Keep custom element size even if dock exceeds screen limits"
+      },
+      "scrolling": {
+        "title": "Enable element scrolling",
+        "desc": "Limit visible elements and allow mouse wheel or touchpad scrolling"
+      },
+      "visible_elements": {
+        "title": "Visible elements",
+        "desc": "Number of dock items visible at the same time"
+      },
+      "hover_scale": {
+        "title": "Hover scale effect",
+        "desc": "Magnification level when hovering over dock items"
+      },
+      "cascade_scale": {
+        "title": "Scale nearest elements",
+        "desc": "Cascading magnification on neighboring icons"
+      },
+      "exclusive": {
+        "title": "Exclusive mode",
+        "desc": "Prevent windows from taking space occupied by the dock"
+      }
+    }
+  },
+  "kodexbar": {
+    "limits": "Limits",
+    "memory": "Memory",
+    "online": "online",
+    "offline": "offline",
+    "pages": "Pages",
+    "sessions": "Sessions",
+    "observations": "Observations",
+    "database": "Database",
+    "open_handoffs": "Open handoffs",
+    "recent": "Recent",
+    "no_pages": "No pages yet",
+    "open_web": "Open web UI",
+    "updated": "updated",
+    "last_activity": "Last activity:",
+    "server_hint": "Start the user service: systemctl --user start ai-memory",
+    "activity": "Activity",
+    "consumption": "Usage (24h)",
+    "cost_30d": "Cost (30 days)",
+    "sessions_recent": "Recent sessions",
+    "no_sessions": "No sessions recorded yet",
+    "sessions_n": "{n} sessions",
+    "sessions_one": "1 session",
+    "best_now": "Best now",
+    "copy_cmd": "Copy command",
+    "open_terminal": "Open in terminal",
+    "reason_handoff": "continue the handoff",
+    "reason_handoff_exhausted": "handoff from {agent} is exhausted",
+    "reason_headroom": "most quota headroom",
+    "rules": "Project rules",
+    "events": "Events",
+    "evt_severity": "{provider} reached {pct}%",
+    "evt_error": "{provider}: failed to read quota",
+    "evt_reset": "{provider} reset ({from}% -> {to}%)",
+    "evt_reset_session": "{provider} session reset ({from}% -> {to}%)",
+    "evt_handoff": "Pending handoff: {agent}",
+    "evt_server_up": "ai-memory online",
+    "evt_server_down": "ai-memory offline",
+    "evt_session": "New session: {agent}",
+    "overview": "Overview",
+    "stats_worst": "Worst quota",
+    "stats_cost": "Cost (30d)",
+    "stats_handoffs": "Handoffs",
+    "stats_sessions": "Sessions (24h)",
+    "mode_unified": "Unified",
+    "mode_alerts": "Alerts",
+    "mode_worst": "Summary",
+    "mode_full": "Full",
+    "no_sessions_short": "no sessions",
+    "collecting": "Collecting history...",
+    "trend": "Trend (24h)",
+    "trend_stable": "stable",
+    "trend_forecast": "runs out in ~{hours}",
+    "settings_bar": "Bar mode",
+    "settings_notify": "Notifications",
+    "settings_cooldown": "Cooldown",
+    "settings_alerts": "Alerts (warn/crit)",
+    "notif_open": "Open",
+    "memory_search": "Search memory",
+    "memory_search_ph": "Search the wiki...",
+    "memory_no_results": "no results",
+    "memory_note": "Quick note",
+    "memory_note_ph": "write & save...",
+    "memory_save": "Save",
+    "memory_saved": "saved",
+    "running": "running"
+  }
+}

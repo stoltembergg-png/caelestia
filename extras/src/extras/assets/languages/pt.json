@@ -1,0 +1,203 @@
+{
+  "quickactions": {
+    "systemusage": {
+      "cpu": "CPU",
+      "ram": "RAM",
+      "temp": "Temp",
+      "disk": "Disco",
+      "net": "Rede"
+    },
+    "timer": {
+      "tabs": {
+        "timer": "Timer",
+        "stopwatch": "Cronômetro",
+        "pomodoro": "Pomodoro"
+      },
+      "stopwatch": {
+        "lap": "Volta {number}"
+      },
+      "pomodoro": {
+        "phases": {
+          "focus": "Foco",
+          "short_break": "Pausa curta",
+          "long_break": "Pausa longa"
+        },
+        "settings": {
+          "work": "Trabalho (min)",
+          "short_break": "Pausa curta (min)",
+          "long_break": "Pausa longa (min)",
+          "sessions": "Sessões"
+        }
+      },
+      "notification": {
+        "app_name": "Timer do Quickshell",
+        "timer_finished_title": "Timer concluído",
+        "timer_finished_body": "Seu timer de {time} terminou.",
+        "focus_complete_title": "Foco concluído",
+        "focus_complete_body": "Bom trabalho! Hora de uma merecida pausa.",
+        "break_over_title": "Pausa terminada",
+        "break_over_body": "A pausa acabou. De volta ao foco!",
+        "pomo_skipped_title": "Pomodoro pulado",
+        "pomo_skipped_focus_body": "Sessão de foco pulada. Indo para a pausa.",
+        "pomo_skipped_break_body": "Pausa pulada. De volta ao foco."
+      }
+    },
+    "notepad": {
+      "title": "Notas",
+      "new": "Nova",
+      "empty_list": "Nenhuma nota ainda.\nToque em Nova para criar uma.",
+      "untitled": "Nota sem título",
+      "tap_to_write": "Toque para escrever...",
+      "placeholder": "Escreva em markdown..."
+    }
+  },
+  "guide": {
+    "dock": {
+      "enabled": {
+        "title": "Ativar dock",
+        "desc": "Ativa a dock flutuante de aplicativos"
+      },
+      "position": {
+        "title": "Posição da dock",
+        "desc": "Selecione a borda onde a dock se fixa",
+        "bottom": "Embaixo",
+        "top": "Topo",
+        "left": "Esquerda",
+        "right": "Direita"
+      },
+      "elements": {
+        "title": "Número de elementos",
+        "desc": "Total de atalhos exibidos na dock"
+      },
+      "size": {
+        "title": "Tamanho dos elementos",
+        "desc": "Dimensões dos botões em pixels"
+      },
+      "autohide": {
+        "title": "Ocultar automaticamente",
+        "desc": "Oculta a dock quando o mouse sai da borda"
+      },
+      "timeout": {
+        "title": "Atraso para ocultar",
+        "desc": "Duração antes de ocultar após o mouse sair"
+      },
+      "floating": {
+        "title": "Dock flutuante",
+        "desc": "Descola a dock da borda com cantos arredondados"
+      },
+      "transparency": {
+        "title": "Transparência da dock",
+        "desc": "Ajusta a opacidade do fundo da dock"
+      },
+      "apps": {
+        "title": "Aplicativos da dock",
+        "singular": "app",
+        "plural": "apps",
+        "shuffle": "Embaralhar apps",
+        "empty": "Nenhum aplicativo na dock",
+        "enter_edit": "Editar",
+        "exit_edit": "Sair do modo de edição"
+      },
+      "picker": {
+        "search": "Pesquisar apps...",
+        "done": "Concluir",
+        "empty": "Nenhum aplicativo correspondente"
+      },
+      "opacity": {
+        "title": "Opacidade da dock",
+        "desc": "Ajusta a opacidade do fundo da dock"
+      },
+      "override_bounds": {
+        "title": "Ignorar correção de tamanho fora da tela",
+        "desc": "Mantém o tamanho personalizado mesmo se a dock passar da tela"
+      },
+      "scrolling": {
+        "title": "Ativar rolagem de elementos",
+        "desc": "Limita os visíveis e permite rolar com mouse ou touchpad"
+      },
+      "visible_elements": {
+        "title": "Elementos visíveis",
+        "desc": "Número de itens visíveis ao mesmo tempo"
+      },
+      "hover_scale": {
+        "title": "Efeito de escala no hover",
+        "desc": "Nível de ampliação ao passar o mouse nos itens"
+      },
+      "cascade_scale": {
+        "title": "Escalar vizinhos",
+        "desc": "Ampliação em cascata nos ícones vizinhos"
+      },
+      "exclusive": {
+        "title": "Modo exclusivo",
+        "desc": "Impede janelas de ocuparem o espaço da dock"
+      }
+    }
+  },
+  "kodexbar": {
+    "limits": "Limites",
+    "memory": "Memória",
+    "online": "online",
+    "offline": "offline",
+    "pages": "Páginas",
+    "sessions": "Sessões",
+    "observations": "Observações",
+    "database": "Banco",
+    "open_handoffs": "Handoffs abertos",
+    "recent": "Recentes",
+    "no_pages": "Nenhuma página ainda",
+    "open_web": "Abrir web UI",
+    "updated": "atualizado",
+    "last_activity": "Última atividade:",
+    "server_hint": "Inicie o serviço: systemctl --user start ai-memory",
+    "activity": "Atividade",
+    "consumption": "Consumo (24h)",
+    "cost_30d": "Custo (30 dias)",
+    "sessions_recent": "Sessões recentes",
+    "no_sessions": "Nenhuma sessão registrada ainda",
+    "sessions_n": "{n} sessões",
+    "sessions_one": "1 sessão",
+    "best_now": "Melhor agora",
+    "copy_cmd": "Copiar comando",
+    "open_terminal": "Abrir no terminal",
+    "reason_handoff": "continuar o handoff",
+    "reason_handoff_exhausted": "handoff de {agent} esgotado",
+    "reason_headroom": "maior folga de quota",
+    "rules": "Regras do projeto",
+    "events": "Eventos",
+    "evt_severity": "{provider} atingiu {pct}%",
+    "evt_error": "{provider}: falha ao ler quota",
+    "evt_reset": "{provider} renovado ({from}% -> {to}%)",
+    "evt_reset_session": "{provider} sessao renovada ({from}% -> {to}%)",
+    "evt_handoff": "Handoff pendente: {agent}",
+    "evt_server_up": "ai-memory online",
+    "evt_server_down": "ai-memory offline",
+    "evt_session": "Nova sessao: {agent}",
+    "overview": "Visao geral",
+    "stats_worst": "Pior quota",
+    "stats_cost": "Custo (30d)",
+    "stats_handoffs": "Handoffs",
+    "stats_sessions": "Sessoes (24h)",
+    "mode_unified": "Unico",
+    "mode_alerts": "Alertas",
+    "mode_worst": "Resumo",
+    "mode_full": "Completo",
+    "no_sessions_short": "sem sessões",
+    "collecting": "Coletando histórico...",
+    "trend": "Tendência (24h)",
+    "trend_stable": "estável",
+    "trend_forecast": "esgota em ~{hours}",
+    "settings_bar": "Modo da barra",
+    "settings_notify": "Notificações",
+    "settings_cooldown": "Intervalo entre avisos",
+    "settings_alerts": "Alertas (aviso/crítico)",
+    "notif_open": "Abrir",
+    "memory_search": "Buscar na memória",
+    "memory_search_ph": "Buscar no wiki...",
+    "memory_no_results": "nada encontrado",
+    "memory_note": "Nota rápida",
+    "memory_note_ph": "escreva e salve...",
+    "memory_save": "Salvar",
+    "memory_saved": "salva",
+    "running": "em andamento"
+  }
+}
