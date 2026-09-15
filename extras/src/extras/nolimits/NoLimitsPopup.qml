@@ -265,11 +265,11 @@ Item {
                 // Tokens.padding.large das bordas do blob. Margem extra aqui
                 // duplicaria o recuo e afastaria do padrão nativo.
                 anchors.margins: 0
-                spacing: window.s(12)
+                spacing: Tokens.spacing.medium
 
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: window.s(8)
+                    spacing: Tokens.spacing.small
 
                     Rectangle {
                         Layout.alignment: Qt.AlignVCenter
@@ -288,23 +288,14 @@ Item {
                         color: ThemeBackend.text
                     }
 
-                    Rectangle {
+                    Text {
+                        id: alertsText
                         Layout.alignment: Qt.AlignVCenter
                         visible: window.activeView === "limits" && window.aggregateSeverity().alerts > 0
-                        radius: height / 2
-                        color: window.chipFill
-                        border.width: 0
-                        implicitWidth: alertsText.implicitWidth + window.s(14)
-                        implicitHeight: window.s(18)
-
-                        Text {
-                            id: alertsText
-                            anchors.centerIn: parent
-                            text: window.aggregateSeverity().alerts + " em alerta"
-                            font.family: ThemeBackend.fontFamily
-                            font.pixelSize: window.s(9)
-                            color: ThemeBackend.subtext0
-                        }
+                        text: window.aggregateSeverity().alerts + " em alerta"
+                        font.family: ThemeBackend.fontFamily
+                        font.pixelSize: window.s(9)
+                        color: ThemeBackend.subtext0
                     }
 
                     Item { Layout.fillWidth: true }
@@ -348,7 +339,7 @@ Item {
                     ColumnLayout {
                         id: cardsColumn
                         width: flick.width
-                        spacing: window.s(9)
+                        spacing: Tokens.spacing.small
 
                         Repeater {
                             model: NoLimits.cards
@@ -359,8 +350,8 @@ Item {
                                 property var rows: modelData.rows
 
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: cardCol.implicitHeight + window.s(18)
-                                radius: window.s(14)
+                                Layout.preferredHeight: cardCol.implicitHeight + Tokens.padding.medium * 2
+                                radius: ThemeBackend.borderRadius
                                 color: ThemeBackend.surface0
                                 border.width: 0
                                 opacity: window.isDisabled(card.entry.provider) ? 0.45 : 1.0
@@ -371,19 +362,19 @@ Item {
                                     anchors.left: parent.left
                                     anchors.right: parent.right
                                     anchors.verticalCenter: parent.verticalCenter
-                                    anchors.leftMargin: window.s(12)
-                                    anchors.rightMargin: window.s(12)
-                                    spacing: window.s(7)
+                                    anchors.leftMargin: Tokens.padding.medium
+                                    anchors.rightMargin: Tokens.padding.medium
+                                    spacing: Tokens.spacing.small
 
                                     RowLayout {
                                         Layout.fillWidth: true
-                                        spacing: window.s(8)
+                                        spacing: Tokens.spacing.small
 
                                         Rectangle {
                                             Layout.alignment: Qt.AlignVCenter
                                             width: window.s(28)
                                             height: width
-                                            radius: window.s(9)
+                                            radius: Math.min(ThemeBackend.borderRadius, width / 2)
                                             color: window.chipFill
                                             border.width: 0
 
@@ -419,29 +410,21 @@ Item {
                                             color: ThemeBackend.text
                                         }
 
-                                        Rectangle {
+                                        Text {
                                             Layout.alignment: Qt.AlignVCenter
                                             visible: {
                                                 let ident = card.entry.usage && card.entry.usage.identity;
                                                 if (!ident || !ident.loginMethod) return false;
                                                 return String(ident.loginMethod).toLowerCase() !== String(window.providerName(card.entry.provider)).toLowerCase();
                                             }
-                                            radius: height / 2
-                                            color: Qt.rgba(ThemeBackend.surface1.r, ThemeBackend.surface1.g, ThemeBackend.surface1.b, 0.7)
-                                            implicitWidth: planText.implicitWidth + window.s(10)
-                                            implicitHeight: window.s(15)
-
-                                            Text {
-                                                id: planText
-                                                anchors.centerIn: parent
-                                                text: {
-                                                    let ident = card.entry.usage && card.entry.usage.identity;
-                                                    return (ident && ident.loginMethod) ? ident.loginMethod : "";
-                                                }
-                                                font.family: ThemeBackend.fontFamily
-                                                font.pixelSize: window.s(9)
-                                                color: ThemeBackend.overlay2
+                                            id: planText
+                                            text: {
+                                                let ident = card.entry.usage && card.entry.usage.identity;
+                                                return (ident && ident.loginMethod) ? ident.loginMethod : "";
                                             }
+                                            font.family: ThemeBackend.fontFamily
+                                            font.pixelSize: window.s(9)
+                                            color: ThemeBackend.overlay2
                                         }
 
                                         Item { Layout.fillWidth: true }
@@ -551,21 +534,13 @@ Item {
                                                 horizontalAlignment: Text.AlignRight
                                             }
 
-                                            Rectangle {
+                                            Text {
                                                 Layout.alignment: Qt.AlignVCenter
-                                                Layout.preferredWidth: Math.max(window.s(46), resetText.implicitWidth + window.s(10))
-                                                Layout.preferredHeight: window.s(15)
-                                                radius: height / 2
-                                                color: Qt.rgba(ThemeBackend.surface1.r, ThemeBackend.surface1.g, ThemeBackend.surface1.b, 0.6)
-
-                                                Text {
-                                                    id: resetText
-                                                    anchors.centerIn: parent
-                                                    text: window.fmtReset(modelData.reset)
-                                                    font.family: ThemeBackend.fontFamily
-                                                    font.pixelSize: window.s(9)
-                                                    color: ThemeBackend.overlay2
-                                                }
+                                                id: resetText
+                                                text: window.fmtReset(modelData.reset)
+                                                font.family: ThemeBackend.fontFamily
+                                                font.pixelSize: window.s(9)
+                                                color: ThemeBackend.overlay2
                                             }
                                         }
                                     }
@@ -795,86 +770,6 @@ Item {
                             }
                         }
 
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: alertsCol.implicitHeight + window.s(18)
-                            radius: window.s(14)
-                            color: ThemeBackend.surface0
-
-                            ColumnLayout {
-                                id: alertsCol
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.leftMargin: window.s(12)
-                                anchors.rightMargin: window.s(12)
-                                spacing: window.s(8)
-
-                                Text {
-                                    Layout.alignment: Qt.AlignVCenter
-                                    text: I18n.t("kodexbar.settings_alerts")
-                                    font.family: ThemeBackend.fontFamily
-                                    font.weight: Font.Bold
-                                    font.pixelSize: window.s(11)
-                                    color: ThemeBackend.text
-                                }
-
-                                Repeater {
-                                    model: NoLimits.providers
-
-                                    delegate: RowLayout {
-                                        id: alertRow
-                                        Layout.fillWidth: true
-                                        spacing: window.s(4)
-                                        property string pid: modelData.provider
-
-                                        Text {
-                                            Layout.fillWidth: true
-                                            Layout.alignment: Qt.AlignVCenter
-                                            text: NoLimits.providerName(alertRow.pid)
-                                            font.family: ThemeBackend.fontFamily
-                                            font.pixelSize: window.s(9)
-                                            color: ThemeBackend.text
-                                            elide: Text.ElideRight
-                                        }
-
-                                        Repeater {
-                                            model: [
-                                                { w: 40, c: 70 },
-                                                { w: 50, c: 80 },
-                                                { w: 60, c: 90 }
-                                            ]
-
-                                            delegate: Rectangle {
-                                                Layout.alignment: Qt.AlignVCenter
-                                                property var th: NoLimits.thresholdsFor(alertRow.pid)
-                                                property bool active: th.warn === modelData.w && th.crit === modelData.c
-                                                implicitWidth: alertText.implicitWidth + window.s(10)
-                                                implicitHeight: window.s(18)
-                                                radius: height / 2
-                                                color: active ? window.chipFill : "transparent"
-
-                                                Text {
-                                                    id: alertText
-                                                    anchors.centerIn: parent
-                                                    text: modelData.w + "/" + modelData.c
-                                                    font.family: ThemeBackend.fontFamily
-                                                    font.weight: parent.active ? Font.Bold : Font.Normal
-                                                    font.pixelSize: window.s(8)
-                                                    color: parent.active ? ThemeBackend.text : ThemeBackend.overlay1
-                                                }
-
-                                                MouseArea {
-                                                    anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: NoLimits.setThreshold(alertRow.pid, modelData.w, modelData.c)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
 
