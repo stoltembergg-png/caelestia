@@ -52,7 +52,8 @@
     },
     "draw": {
       "default_palette": "Padrão",
-      "palette": "Paleta"
+      "palette": "Paleta",
+      "saved": "Desenho salvo"
     }
   },
   "shortcuts": {
@@ -337,8 +338,8 @@
       "toggle_drawer": "Alternar drawer do WhatsApp"
     },
     "client": {
-      "qr_timeout": "tempo esgotado ao gerar o código; tente de novo",
-      "auth_error": "erro de autenticação",
+      "qr_timeout": "Tempo esgotado ao gerar o código; tente de novo",
+      "auth_error": "Erro de autenticação",
       "group": "Grupo",
       "contact_number": "Contato {n}",
       "contact": "Contato"

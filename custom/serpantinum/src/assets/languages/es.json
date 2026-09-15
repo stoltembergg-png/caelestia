@@ -974,6 +974,7 @@
     "no_active_streams": "Sin transmisiones activas",
     "active_default": "Predeterminado activo",
     "virtual_output": "Salida virtual",
+    "virtual_input": "Entrada virtual",
       "analog": "Analógico",
       "internal_audio": "Audio integrado",
     "tabs": {

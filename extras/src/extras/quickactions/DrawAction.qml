@@ -561,7 +561,7 @@ Item {
                     var outDir = root.picturesDir !== "" ? root.picturesDir : "/tmp";
                     var outPath = outDir + "/drawing_" + Date.now() + ".png";
                     drawCanvas.save(outPath);
-                    Quickshell.execDetached(["notify-send", "-a", "DrawAction", "Drawing saved", outPath]);
+                    Quickshell.execDetached(["notify-send", "-a", "DrawAction", I18n.t("quickactions.draw.saved"), outPath]);
                 }
             }
 

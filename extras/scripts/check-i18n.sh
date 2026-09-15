@@ -4,10 +4,12 @@
 # Verifica:
 #   1. Paridade de chaves-FOLHA entre os idiomas de cada diretório de idiomas
 #      (serpantinum: en == pt == es; extras: en == pt).
-#   2. Ausência de valores de string vazios em qualquer arquivo de idioma.
-#   3. Resolução de toda chave usada via I18n.t("...") / Extras.I18n.t("...")
+#   2. Ausência de valores vazios ou somente com espaços/tabs.
+#   3. Paridade dos placeholders entre idiomas, por chave-FOLHA.
+#   4. Ausência de chaves JSON duplicadas quando python3 está disponível.
+#   5. Resolução de toda chave usada via I18n.t("...") / Extras.I18n.t("...")
 #      em en.json E pt.json do diretório de idiomas que o consumidor carrega.
-#   4. Ausência de qsTr(...) nos consumidores (não há arquivos .ts no repo,
+#   6. Ausência de qsTr(...) nos consumidores (não há arquivos .ts no repo,
 #      então qsTr não traduz nada — deve ser I18n.t()).
 #
 # Uso:  extras/scripts/check-i18n.sh        (a partir de qualquer diretório)
@@ -21,12 +23,24 @@
 
 set -uo pipefail
 
+if ! command -v jq >/dev/null 2>&1; then
+    printf 'FAIL: dependência ausente: jq\n' >&2
+    exit 1
+fi
+
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 cd "$REPO_ROOT" || exit 2
 
 fail=0
 note() { printf '%s\n' "$*"; }
 bad() { printf 'FAIL: %s\n' "$*" >&2; fail=1; }
+
+if command -v python3 >/dev/null 2>&1; then
+    HAVE_PYTHON3=1
+else
+    HAVE_PYTHON3=0
+    note "SKIP duplicatas (python3 ausente)"
+fi
 
 # consumidor-de-QML : diretório-de-idiomas-carregado
 CONSUMERS=(
@@ -40,18 +54,57 @@ DYNAMIC_PREFIX=("whatsapp.chat_list.weekdays.")
 is_dynamic() {
     local k="$1" p
     for p in "${DYNAMIC_PREFIX[@]}"; do
-        case "$k" in "$p"*) return 0 ;; esac
+        if [[ "$k" == "$p" && "$k" == *. ]]; then
+            return 0
+        fi
     done
     return 1
 }
 
 leaves() { jq -r 'paths(scalars) | join(".")' "$1" | sort; }
 
+placeholder_map() {
+    local file="$1" key value placeholders placeholder
+    while IFS=$'\t' read -r key value; do
+        [ -z "$key" ] && continue
+        placeholders="$(printf '%s' "$value" | grep -oE '\{[a-zA-Z0-9_]+\}' || true)"
+        while IFS= read -r placeholder; do
+            [ -z "$placeholder" ] || printf '%s\t%s\n' "$key" "$placeholder"
+        done <<< "$placeholders"
+    done < <(jq -r 'paths(scalars) as $p | [($p | join(".")), getpath($p)] | @tsv' "$file")
+}
+
+check_duplicate_json() {
+    local file="$1"
+    python3 - "$file" <<'PY'
+import json
+import sys
+
+class DuplicateKey(ValueError):
+    pass
+
+def strict_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateKey(key)
+        result[key] = value
+    return result
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as stream:
+        json.load(stream, object_pairs_hook=strict_object)
+except DuplicateKey as error:
+    print(f"duplicate key {error.args[0]!r}", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 check_languages_dir() {
     local dir="$1"
     shift
     local langs=("$@")
-    local base="${langs[0]}" l
+    local base="${langs[0]}" l errors=0
 
     [ -d "$dir" ] || { bad "diretório de idiomas inexistente: $dir"; return; }
 
@@ -59,6 +112,10 @@ check_languages_dir() {
         if ! jq empty "$dir/$l.json" 2>/dev/null; then
             bad "JSON inválido ou ausente: $dir/$l.json"
             return
+        fi
+        if [ "$HAVE_PYTHON3" = "1" ] && ! check_duplicate_json "$dir/$l.json"; then
+            bad "chaves JSON duplicadas: $dir/$l.json"
+            errors=1
         fi
     done
 
@@ -68,16 +125,38 @@ check_languages_dir() {
         if [ -n "$d" ]; then
             bad "paridade de chaves $base/$l divergente em $dir"
             printf '%s\n' "$d" | sed 's/^/      /' >&2
+            errors=1
+        fi
+    done
+
+    for l in "${langs[@]:1}"; do
+        local placeholders
+        placeholders="$(diff <(placeholder_map "$dir/$base.json" | sort -u) <(placeholder_map "$dir/$l.json" | sort -u))"
+        if [ -n "$placeholders" ]; then
+            bad "placeholders divergentes em $dir ($base/$l)"
+            printf '%s\n' "$placeholders" | sed 's/^/      /' >&2
+            errors=1
         fi
     done
 
     for l in "${langs[@]}"; do
         local n
         n="$(jq -r '[paths(scalars) as $p | select(getpath($p) == "")] | length' "$dir/$l.json")"
-        [ "$n" = "0" ] || bad "$dir/$l.json tem $n valor(es) de string vazio(s)"
+        if [ "$n" != "0" ]; then
+            bad "$dir/$l.json tem $n valor(es) de string vazio(s)"
+            errors=1
+        fi
+
+        local whitespace_keys
+        whitespace_keys="$(jq -r 'paths(scalars) as $p | getpath($p) as $v | select(($v | type) == "string") | select($v | test("^[ \\t]+$")) | ($p | join("."))' "$dir/$l.json")"
+        if [ -n "$whitespace_keys" ]; then
+            bad "$dir/$l.json tem valor(es) somente com espaços/tabs"
+            printf '%s\n' "$whitespace_keys" | sed 's/^/      /' >&2
+            errors=1
+        fi
     done
 
-    note "OK  paridade ${langs[*]} :: $dir"
+    [ "$errors" = "0" ] && note "OK  paridade ${langs[*]} :: $dir"
 }
 
 check_consumer() {

@@ -52,7 +52,8 @@
     },
     "draw": {
       "default_palette": "Default",
-      "palette": "Palette"
+      "palette": "Palette",
+      "saved": "Drawing saved"
     }
   },
   "shortcuts": {

@@ -28,9 +28,14 @@ Item {
     signal languageChanged()
 
     function normalizeLang(rawLang) {
-        let language = rawLang;
-        if (typeof rawLang !== "string" || rawLang.trim() === "")
+        // Vazio segue o locale do sistema; tipos inválidos explícitos caem em en.
+        let language;
+        if (rawLang === null || rawLang === undefined || (typeof rawLang === "string" && rawLang.trim() === ""))
             language = Qt.locale().name;
+        else if (typeof rawLang !== "string")
+            return "en";
+        else
+            language = rawLang.trim();
         if (!language || typeof language !== "string")
             return "en";
         let lang = language.toLowerCase().split(/[_-]/)[0];
@@ -115,6 +120,7 @@ Item {
             } catch (e) {
                 root.translations = ({});
             }
+            root.languageChanged();
         }
 
         onLoadFailed: {
@@ -130,6 +136,10 @@ Item {
         }
 
         function onDataReadyChanged(): void {
+            root.applyLanguage();
+        }
+
+        function onRawSettingsChanged(): void {
             root.applyLanguage();
         }
     }
