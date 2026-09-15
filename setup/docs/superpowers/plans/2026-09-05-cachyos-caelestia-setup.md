@@ -1,31 +1,31 @@
-# CachyOS Caelestia Setup Implementation Plan
+# Plano de implementação da configuração do CachyOS Caelestia
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Para agentes autônomos:** SUB-HABILIDADE OBRIGATÓRIA: use superpowers:subagent-driven-development (recomendado) ou superpowers:executing-plans para implementar este plano tarefa por tarefa. As etapas usam a sintaxe de caixa de seleção (`- [ ]`) para acompanhamento.
 
-**Goal:** Build a public, reproducible setup repository that applies the user’s validated CachyOS + Hyprland + Caelestia configuration from one visible terminal command, with backups, dry-run validation, safe package handling, and a read-only health report.
+**Objetivo:** construir um repositório público e reproduzível de configuração que aplique a configuração validada do usuário para CachyOS + Hyprland + Caelestia a partir de um único comando em um terminal visível, com backups, validação em dry-run, tratamento seguro de pacotes e um relatório de saúde somente leitura.
 
-**Architecture:** A Bash entrypoint delegates to small, testable modules. A versioned manifest separates official repositories, AUR, and Flatpak sources. Sanitized templates use explicit placeholders for home-dependent paths. Installation is transactional at the configuration level: capture user files and an optional Snapper pre-snapshot before changes, then provide an explicit restore path. Hardware firmware, BIOS, Secure Boot, partitions, and bootloader state remain outside the installer’s scope.
+**Arquitetura:** um entrypoint Bash delega para módulos pequenos e testáveis. Um manifesto versionado separa repositórios oficiais, AUR e fontes Flatpak. Templates sanitizados usam placeholders explícitos para caminhos dependentes da home. A instalação é transacional no nível da configuração: captura os arquivos do usuário e um pré-snapshot opcional do Snapper antes das mudanças, depois fornece um caminho explícito de restauração. Firmware de hardware, BIOS, Secure Boot, partições e estado do bootloader permanecem fora do escopo do instalador.
 
-**Tech Stack:** Bash 5, `pacman`, `paru` when available for AUR, `flatpak`, `snapper`, `btrfs`, `systemd`, `hyprpm`, Caelestia CLI/Shell, Hyprland Lua configuration, ShellCheck, shfmt, Bats Core, GitHub Actions.
+**Stack tecnológico:** Bash 5, `pacman`, `paru` quando disponível para AUR, `flatpak`, `snapper`, `btrfs`, `systemd`, `hyprpm`, CLI/Shell Caelestia, configuração Lua do Hyprland, ShellCheck, shfmt, Bats Core, GitHub Actions.
 
-**Spec:** `docs/superpowers/specs/2026-09-05-cachyos-caelestia-setup-design.md`
+**Especificação:** `docs/superpowers/specs/2026-09-05-cachyos-caelestia-setup-design.md`
 
-## Global Constraints
+## Restrições globais
 
-- [ ] Never invoke Alacritty. Documentation and manual verification must use Kitty or the user’s already-visible terminal.
-- [ ] Never request, read, store, echo, or automate a password. Privileged commands remain interactive and are executed in the visible terminal.
-- [ ] Never change BIOS, Secure Boot, firmware, disk partitions, bootloader, or system-wide secrets.
-- [ ] Do not copy the entire existing `~/.config/fish/fish_variables`; generate only the managed theme fragment and preserve unrelated user state.
-- [ ] Do not ship personal media, credentials, absolute `/home/gabriel/...` paths, compiled `.so` files, or machine-specific identifiers.
-- [ ] Every destructive or potentially irreversible operation must be opt-in, explain its scope, and have a validated target. Package-cache cleanup and orphan removal are not part of the default setup.
-- [ ] The installer must be idempotent: rerunning it updates only managed files and does not duplicate lines, services, keybinds, repositories, or Flatpak remotes.
-- [ ] `--dry-run` must perform no package, file, service, plugin, or snapshot mutation.
-- [ ] All generated configuration must pass a source-policy scan before it is committed.
-- [ ] Keep commits small and focused; each task below ends with one independently reviewable commit.
+- [ ] Nunca invoque o Alacritty. A documentação e a verificação manual devem usar o Kitty ou o terminal já visível do usuário.
+- [ ] Nunca solicite, leia, armazene, exiba ou automatize uma senha. Os comandos privilegiados permanecem interativos e são executados no terminal visível.
+- [ ] Nunca altere BIOS, Secure Boot, firmware, partições de disco, bootloader ou segredos de todo o sistema.
+- [ ] Não copie todo o `~/.config/fish/fish_variables` existente; gere apenas o fragmento de tema gerenciado e preserve o estado não relacionado do usuário.
+- [ ] Não inclua mídia pessoal, credenciais, caminhos absolutos `/home/gabriel/...`, arquivos `.so` compilados ou identificadores específicos da máquina.
+- [ ] Toda operação destrutiva ou potencialmente irreversível deve ser opt-in, explicar seu escopo e ter um alvo validado. A limpeza do cache de pacotes e a remoção de órfãos não fazem parte da configuração padrão.
+- [ ] O instalador deve ser idempotente: executá-lo novamente atualiza apenas os arquivos gerenciados e não duplica linhas, serviços, atalhos de teclado, repositórios ou remotos Flatpak.
+- [ ] `--dry-run` não deve mutar pacotes, arquivos, serviços, plugins ou snapshots.
+- [ ] Toda configuração gerada deve passar por uma verificação de política de origem antes de ser commitada.
+- [ ] Mantenha os commits pequenos e focados; cada tarefa abaixo termina com um commit revisável de forma independente.
 
-## Repository Map
+## Mapa do repositório
 
-The implementation will establish this layout:
+A implementação estabelecerá este layout:
 
 ```text
 .
@@ -80,22 +80,22 @@ The implementation will establish this layout:
     └── shell/
 ```
 
-The exact monitor directory is kept as a template example only; the renderer must detect the active monitor name and either render the selected profile or skip it with a clear message when `--skip-monitor` is used.
+O diretório exato do monitor é mantido apenas como exemplo de template; o renderizador deve detectar o nome do monitor ativo e renderizar o perfil selecionado ou ignorá-lo com uma mensagem clara quando `--skip-monitor` for usado.
 
 ---
 
-## Task 1: Establish manifests, metadata, and contribution-safe repository boundaries
+## Tarefa 1: estabelecer manifestos, metadados e limites do repositório seguros para contribuições
 
-**Files:** `packages/official.txt`, `packages/aur.txt`, `packages/flatpak.txt`, `README.md`, `LICENSE`, `.gitignore`, `docs/COMPONENTS.md`, `docs/HARDWARE.md`, `tests/bats/manifests.bats`
+**Arquivos:** `packages/official.txt`, `packages/aur.txt`, `packages/flatpak.txt`, `README.md`, `LICENSE`, `.gitignore`, `docs/COMPONENTS.md`, `docs/HARDWARE.md`, `tests/bats/manifests.bats`
 
-- [ ] Write `packages/official.txt` with one package per line and comments for groups. Include the known official packages: `fish`, `flatpak`, `fwupd`, `hyprland`, `nwg-dock-hyprland`, `pamac-aur`, `snapper`, `btrfs-progs`, `btrfs-assistant`, `bazaar`, `flameshot`, `swappy`, `playerctl`, `pavucontrol`, `cliphist`, `wl-clipboard`, `slurp`, `grim`, `wl-gammarelay-rs`, `ttf-cascadia-code-nerd`, and `ttf-material-symbols-variable`.
-- [ ] Write `packages/aur.txt` with `caelestia-cli`, `caelestia-shell`, `quickshell-git`, `qt6-m3shapes-git`, `ttf-rubik-vf`, and `zen-browser-bin`, noting that package availability must be checked rather than assumed.
-- [ ] Write `packages/flatpak.txt` with the approved optional GUI store/application identifiers only after verifying their exact IDs; do not include a guessed application ID.
-- [ ] Add MIT licensing and an ignore file that excludes logs, rendered temporary files, backup archives, personal wallpapers, `.env` files, and build artifacts.
-- [ ] Document component attribution and supported assumptions in `docs/COMPONENTS.md` and `docs/HARDWARE.md`: CachyOS/Arch, Hyprland session, Btrfs/Snapper optional, Kitty or another visible terminal, a logged-in desktop session, the guarded `DP-1` profile, and explicit BIOS/CPPC/Secure Boot exclusions.
-- [ ] Add Bats tests that reject duplicate package names, blank identifiers, shell metacharacters in package identifiers, and a missing manifest file.
+- [ ] Escreva `packages/official.txt` com um pacote por linha e comentários para os grupos. Inclua os pacotes oficiais conhecidos: `fish`, `flatpak`, `fwupd`, `hyprland`, `nwg-dock-hyprland`, `pamac-aur`, `snapper`, `btrfs-progs`, `btrfs-assistant`, `bazaar`, `flameshot`, `swappy`, `playerctl`, `pavucontrol`, `cliphist`, `wl-clipboard`, `slurp`, `grim`, `wl-gammarelay-rs`, `ttf-cascadia-code-nerd` e `ttf-material-symbols-variable`.
+- [ ] Escreva `packages/aur.txt` com `caelestia-cli`, `caelestia-shell`, `quickshell-git`, `qt6-m3shapes-git`, `ttf-rubik-vf` e `zen-browser-bin`, observando que a disponibilidade dos pacotes deve ser verificada, não presumida.
+- [ ] Escreva `packages/flatpak.txt` com os identificadores aprovados de lojas/aplicativos GUI opcionais somente após verificar seus IDs exatos; não inclua um ID de aplicativo presumido.
+- [ ] Adicione o licenciamento MIT e um arquivo de exclusões que não inclua logs, arquivos temporários renderizados, arquivos de backup, wallpapers pessoais, arquivos `.env` e artefatos de build.
+- [ ] Documente a atribuição dos componentes e as premissas compatíveis em `docs/COMPONENTS.md` e `docs/HARDWARE.md`: CachyOS/Arch, sessão Hyprland, Btrfs/Snapper opcionais, Kitty ou outro terminal visível, uma sessão de desktop autenticada, o perfil `DP-1` protegido e exclusões explícitas de BIOS/CPPC/Secure Boot.
+- [ ] Adicione testes Bats que rejeitem nomes de pacotes duplicados, identificadores vazios, metacaracteres de shell em identificadores de pacotes e um arquivo de manifesto ausente.
 
-Verification:
+Verificação:
 
 ```bash
 bats tests/bats/manifests.bats
@@ -104,19 +104,19 @@ git diff --check
 
 Commit: `chore: establish setup manifests and repository policy`
 
-## Task 2: Implement the shared command-line contract and safe execution layer
+## Tarefa 2: implementar o contrato compartilhado de linha de comando e a camada de execução segura
 
-**Files:** `install.sh`, `lib/preflight.sh`, `tests/smoke.sh`, `tests/bats/common.bats`, `tests/fixtures/fake-bin/`
+**Arquivos:** `install.sh`, `lib/preflight.sh`, `tests/smoke.sh`, `tests/bats/common.bats`, `tests/fixtures/fake-bin/`
 
-- [ ] Implement strict Bash startup (`set -Eeuo pipefail`), deterministic repository-root discovery, and a temporary workspace with cleanup traps.
-- [ ] Parse `--dry-run`, `--yes`, `--restore TIMESTAMP`, `--skip-monitor`, `--help`, and `--version`; reject unknown options and missing option values with exit code 2.
-- [ ] Provide `log_info`, `log_warn`, `log_error`, `die`, `run`, `run_privileged`, and `confirm` helpers. In dry-run mode, `run` logs the exact argv without executing it; `run_privileged` never embeds a password or invokes a GUI password helper.
-- [ ] Use argument arrays for package and command execution. Do not build package commands through `eval`, `sh -c`, or unquoted interpolation.
-- [ ] Add preflight checks for Bash version, interactive/visible terminal guidance, supported distribution, network reachability, `sudo` availability, desktop session, and required base commands. Make checks actionable and distinguish hard failures from optional capabilities.
-- [ ] Ensure `--help` and `--version` work without root, network, or package-manager access.
-- [ ] Test argument parsing, dry-run non-execution, exit-code propagation, signal cleanup, and rejection of shell metacharacters through Bats fixtures.
+- [ ] Implemente uma inicialização estrita do Bash (`set -Eeuo pipefail`), descoberta determinística da raiz do repositório e um workspace temporário com traps de limpeza.
+- [ ] Analise `--dry-run`, `--yes`, `--restore TIMESTAMP`, `--skip-monitor`, `--help` e `--version`; rejeite opções desconhecidas e valores ausentes com código de saída 2.
+- [ ] Forneça os auxiliares `log_info`, `log_warn`, `log_error`, `die`, `run`, `run_privileged` e `confirm`. No modo dry-run, `run` registra o argv exato sem executá-lo; `run_privileged` nunca incorpora uma senha nem invoca um auxiliar gráfico de senha.
+- [ ] Use arrays de argumentos para execução de pacotes e comandos. Não construa comandos de pacotes por meio de `eval`, `sh -c` ou interpolação sem aspas.
+- [ ] Adicione verificações preliminares para a versão do Bash, orientação sobre terminal interativo/visível, distribuição compatível, alcance da rede, disponibilidade do `sudo`, sessão de desktop e comandos básicos necessários. Torne as verificações acionáveis e diferencie falhas impeditivas de recursos opcionais.
+- [ ] Garanta que `--help` e `--version` funcionem sem acesso a root, rede ou gerenciador de pacotes.
+- [ ] Teste a análise de argumentos, a não execução no dry-run, a propagação do código de saída, a limpeza por sinal e a rejeição de metacaracteres de shell por meio de fixtures Bats.
 
-Verification:
+Verificação:
 
 ```bash
 bash -n install.sh lib/*.sh scripts/*.sh
@@ -125,19 +125,19 @@ bats tests/bats/common.bats
 
 Commit: `feat: add safe installer command contract`
 
-## Task 3: Add package installation with official/AUR separation and idempotency
+## Tarefa 3: adicionar instalação de pacotes com separação oficial/AUR e idempotência
 
-**Files:** `lib/packages.sh`, `tests/bats/packages.bats`, `docs/troubleshooting.md`
+**Arquivos:** `lib/packages.sh`, `tests/bats/packages.bats`, `docs/troubleshooting.md`
 
-- [ ] Implement package presence detection with `pacman -Q`, repository availability detection with `pacman -Si`, and AUR availability detection through the selected helper.
-- [ ] Run the complete official-system update (`pacman -Syu`) and install official packages in one planned transaction, refreshing package databases only after confirmation or `--yes`; never perform a partial database refresh.
-- [ ] Detect `paru` and use it only for packages explicitly listed in the AUR manifest. If `paru` is absent, report the exact AUR packages that need manual handling and stop before partial AUR installation; do not reinstall `yay`.
-- [ ] Handle an unavailable optional package by recording it as skipped with a reason; fail for required packages that are unavailable in both configured repositories and the permitted AUR path.
-- [ ] Keep package names in arrays created from validated manifest lines. Do not pass comments or blank lines to package managers.
-- [ ] Add a package plan summary that clearly separates already-installed, to-install, unavailable optional, and blocking packages.
-- [ ] Add fixture tests for installed packages, duplicate entries, unavailable packages, missing `paru`, dry-run behavior, and the “no `yay` reintroduction” invariant.
+- [ ] Implemente a detecção de presença de pacotes com `pacman -Q`, a detecção de disponibilidade nos repositórios com `pacman -Si` e a detecção de disponibilidade no AUR por meio do auxiliar selecionado.
+- [ ] Execute a atualização completa do sistema oficial (`pacman -Syu`) e instale os pacotes oficiais em uma única transação planejada, atualizando os bancos de dados apenas após confirmação ou `--yes`; nunca faça uma atualização parcial do banco de dados.
+- [ ] Detecte o `paru` e use-o apenas para pacotes explicitamente listados no manifesto do AUR. Se o `paru` estiver ausente, informe os pacotes AUR exatos que precisam de tratamento manual e pare antes de uma instalação AUR parcial; não reinstale o `yay`.
+- [ ] Trate um pacote opcional indisponível registrando-o como ignorado com um motivo; falhe para pacotes obrigatórios indisponíveis tanto nos repositórios configurados quanto no caminho AUR permitido.
+- [ ] Mantenha os nomes dos pacotes em arrays criados a partir de linhas de manifesto validadas. Não passe comentários ou linhas vazias aos gerenciadores de pacotes.
+- [ ] Adicione um resumo do plano de pacotes que separe claramente os já instalados, os que serão instalados, os opcionais indisponíveis e os pacotes impeditivos.
+- [ ] Adicione testes de fixture para pacotes instalados, entradas duplicadas, pacotes indisponíveis, `paru` ausente, comportamento de dry-run e a invariável “não reintroduzir `yay`”.
 
-Verification:
+Verificação:
 
 ```bash
 bats tests/bats/packages.bats
@@ -146,19 +146,19 @@ shellcheck lib/packages.sh
 
 Commit: `feat: install validated official and aur package sets`
 
-## Task 4: Implement backups, Snapper pre-snapshots, and explicit restore
+## Tarefa 4: implementar backups, pré-snapshots do Snapper e restauração explícita
 
-**Files:** `lib/config.sh`, `scripts/restore-backup`, `tests/bats/snapshots.bats`, `docs/RECOVERY.md`, `docs/troubleshooting.md`
+**Arquivos:** `lib/config.sh`, `scripts/restore-backup`, `tests/bats/snapshots.bats`, `docs/RECOVERY.md`, `docs/troubleshooting.md`
 
-- [ ] Create state under `~/.local/state/cachyos-caelestia-setup/` and backups under `backups/<UTC-timestamp>/` with restrictive permissions.
-- [ ] Before touching managed files, copy each existing target while preserving relative paths and metadata where possible; record a manifest with checksums and whether each file was absent.
-- [ ] Detect Btrfs and a usable Snapper root configuration. Create a labeled pre-setup snapshot only when both are available and never treat snapshot creation as permission to alter unrelated subvolumes.
-- [ ] If no Snapper configuration exists, continue with file backups and state that rollback is file-level only.
-- [ ] Implement `--restore TIMESTAMP` in `install.sh` and `scripts/restore-backup` with exact backup-directory validation, a confirmation unless `--yes` is supplied, restoration of only managed targets, and a final reload/restart suggestion. Refuse path traversal and symlink escapes.
-- [ ] Make restore idempotent and preserve files that were created after the backup unless they are managed targets explicitly recorded in the manifest.
-- [ ] Test snapshot capability branches with mocked `findmnt`, `snapper`, and `btrfs`; test backup/restore, invalid timestamps, absent files, permissions, and path traversal rejection.
+- [ ] Crie o estado em `~/.local/state/cachyos-caelestia-setup/` e os backups em `backups/<UTC-timestamp>/` com permissões restritivas.
+- [ ] Antes de tocar nos arquivos gerenciados, copie cada alvo existente preservando, quando possível, os caminhos relativos e metadados; registre um manifesto com checksums e indicando se cada arquivo estava ausente.
+- [ ] Detecte Btrfs e uma configuração root utilizável do Snapper. Crie um snapshot de pré-configuração rotulado somente quando ambos estiverem disponíveis e nunca trate a criação do snapshot como permissão para alterar subvolumes não relacionados.
+- [ ] Se não existir configuração do Snapper, continue com os backups de arquivos e informe que a reversão ocorre apenas no nível dos arquivos.
+- [ ] Implemente `--restore TIMESTAMP` em `install.sh` e `scripts/restore-backup` com validação exata do diretório de backup, confirmação salvo quando `--yes` for fornecido, restauração apenas dos alvos gerenciados e uma sugestão final de recarga/reinício. Recuse traversal de caminhos e escapes por links simbólicos.
+- [ ] Torne a restauração idempotente e preserve os arquivos criados após o backup, exceto quando forem alvos gerenciados registrados explicitamente no manifesto.
+- [ ] Teste os caminhos de capacidade de snapshot com `findmnt`, `snapper` e `btrfs` simulados; teste backup/restauração, timestamps inválidos, arquivos ausentes, permissões e rejeição de traversal de caminhos.
 
-Verification:
+Verificação:
 
 ```bash
 bats tests/bats/snapshots.bats
@@ -167,19 +167,19 @@ shellcheck lib/config.sh
 
 Commit: `feat: add reversible configuration backups and restore`
 
-## Task 5: Render and validate sanitized configuration templates
+## Tarefa 5: renderizar e validar templates de configuração sanitizados
 
-**Files:** `scripts/render-config.sh`, `lib/config.sh`, `config/caelestia/**`, `config/fish/conf.d/caelestia-theme.fish`, `config/hypr/**`, `config/nwg-dock-hyprland/**`, `tests/bats/render-config.bats`
+**Arquivos:** `scripts/render-config.sh`, `lib/config.sh`, `config/caelestia/**`, `config/fish/conf.d/caelestia-theme.fish`, `config/hypr/**`, `config/nwg-dock-hyprland/**`, `tests/bats/render-config.bats`
 
-- [ ] Port only the user-approved, non-personal configuration from the live setup into templates, retaining the working pt-BR translations, concise audio-device labels, battery percentage placement/toggle, wallpaper selector behavior, dock styling, and clean window/theme borders.
-- [ ] Replace machine-dependent values with exactly these supported placeholders: `__HOME__`, `__WALLPAPER_DIR__`, and `__HYPRFOCUS_PLUGIN__`. Use the package-provided `zen-browser` command in keybinds instead of an absolute extracted path.
-- [ ] Render `__HOME__` from the invoking user’s actual home, `__WALLPAPER_DIR__` from an XDG default with an existing-directory fallback, and `__HYPRFOCUS_PLUGIN__` only as a runtime-managed plugin reference; never hard-code the current monitor or username.
-- [ ] Keep Fish integration in a dedicated `conf.d` file that reads the generated Caelestia scheme or uses a safe fallback. Do not overwrite `fish_variables`.
-- [ ] Keep the current `DP-1` profile versioned for the same-machine target, generate/apply it only after querying active outputs, preserve a portable default, and honor `--skip-monitor` when the output does not match or the user requests a skip.
-- [ ] Install files atomically with temporary files inside the destination filesystem, mode `0644` for ordinary config and `0755` for executable scripts, after backup capture.
-- [ ] Add renderer tests for all placeholders, home paths with spaces, missing wallpaper directories, absent monitor data, no absolute `/home/` paths, no tokens/keys, and no binary plugin payloads.
+- [ ] Transfira para templates apenas a configuração não pessoal aprovada pelo usuário, proveniente da configuração ativa, mantendo as traduções pt-BR funcionais, os rótulos concisos de dispositivos de áudio, a posição/alternância da porcentagem da bateria, o comportamento do seletor de wallpapers, o estilo do dock e as bordas limpas de janelas/tema.
+- [ ] Substitua valores dependentes da máquina exatamente por estes placeholders compatíveis: `__HOME__`, `__WALLPAPER_DIR__` e `__HYPRFOCUS_PLUGIN__`. Use o comando `zen-browser` fornecido pelo pacote nos atalhos de teclado em vez de um caminho absoluto para um executável extraído.
+- [ ] Renderize `__HOME__` a partir da home real do usuário que invoca o comando, `__WALLPAPER_DIR__` a partir de um padrão XDG com fallback para um diretório existente e `__HYPRFOCUS_PLUGIN__` somente como referência de plugin gerenciada em runtime; nunca fixe o monitor ou nome de usuário atuais no código.
+- [ ] Mantenha a integração do Fish em um arquivo `conf.d` dedicado que leia o esquema Caelestia gerado ou use um fallback seguro. Não sobrescreva `fish_variables`.
+- [ ] Mantenha o perfil `DP-1` atual versionado para o alvo na mesma máquina, gere/aplique-o somente após consultar as saídas ativas, preserve um padrão portátil e respeite `--skip-monitor` quando a saída não corresponder ou o usuário solicitar a omissão.
+- [ ] Instale arquivos atomicamente com arquivos temporários dentro do sistema de arquivos de destino, modo `0644` para configurações comuns e `0755` para scripts executáveis, após capturar o backup.
+- [ ] Adicione testes do renderizador para todos os placeholders, caminhos de home com espaços, diretórios de wallpapers ausentes, dados de monitor ausentes, ausência de caminhos absolutos `/home/`, ausência de tokens/chaves e ausência de payloads binários de plugins.
 
-Verification:
+Verificação:
 
 ```bash
 bats tests/bats/render-config.bats
@@ -188,21 +188,21 @@ bash scripts/check-source-policy.sh
 
 Commit: `feat: render portable caelestia and hyprland configuration`
 
-## Task 6: Integrate Hyprland, official hyprfocus, keybinds, and dock services
+## Tarefa 6: integrar Hyprland, hyprfocus oficial, atalhos de teclado e serviços do dock
 
-**Files:** `lib/services.sh`, `config/hypr/config/autostart.lua`, `config/hypr/config/keybinds.lua`, `config/hypr/hyprland.lua`, `config/nwg-dock-hyprland/**`, `tests/bats/integrations.bats`, `docs/RECOVERY.md`, `docs/troubleshooting.md`
+**Arquivos:** `lib/services.sh`, `config/hypr/config/autostart.lua`, `config/hypr/config/keybinds.lua`, `config/hypr/hyprland.lua`, `config/nwg-dock-hyprland/**`, `tests/bats/integrations.bats`, `docs/RECOVERY.md`, `docs/troubleshooting.md`
 
-- [ ] Remove the stale manual `~/.config/hypr/plugins/hyprfocus.so` loading path from the managed template; never copy the incompatible binary from the current machine.
-- [ ] Detect `hyprpm`, add `https://github.com/hyprwm/hyprland-plugins` only when absent, enable `hyprfocus`, run `hyprpm update`, and reload the plugin through the supported Hyprland mechanism. Record a clear optional-skip reason when Hyprland/plugin support is unavailable.
-- [ ] Preserve the approved subtle focus animation defaults and avoid installing visual plugins such as `hyprbars` or `borders-plus-plus`.
-- [ ] Restore the official Caelestia wallpaper-picker keybind (`SUPER+W`) using the installed Caelestia CLI command and verify that it does not open the settings page. Keep `SUPER+1` through `SUPER+9` mapped to workspace switching.
-- [ ] Replace the extracted Zen absolute path with the stable `zen-browser` launcher command supplied by `zen-browser-bin`.
-- [ ] Install/update the user `nwg-dock-hyprland` service and its Caelestia dynamic theme path only when the service is available; keep dock transparency, low border height, theme-colored background, raised position, and stronger hover/click feedback in the templates.
-- [ ] Make user-service operations explicit and idempotent (`systemctl --user daemon-reload`, enable/restart only managed units). Do not enable unrelated services.
-- [ ] Enable weekly TRIM, monthly Btrfs scrub, and Snapper timeline/cleanup only when the corresponding filesystem, configuration, and systemd units are available; report skipped maintenance without blocking desktop setup.
-- [ ] Test hyprpm branches, stale-plugin absence, exact keybind strings, service-unit idempotency, and dry-run command traces using fixtures.
+- [ ] Remova do template gerenciado o caminho antigo de carregamento manual `~/.config/hypr/plugins/hyprfocus.so`; nunca copie o binário incompatível da máquina atual.
+- [ ] Detecte o `hyprpm`, adicione `https://github.com/hyprwm/hyprland-plugins` somente quando ausente, habilite o `hyprfocus`, execute `hyprpm update` e recarregue o plugin pelo mecanismo compatível do Hyprland. Registre um motivo claro para ignorar opcionalmente quando o suporte do Hyprland/plugin estiver indisponível.
+- [ ] Preserve os padrões sutis aprovados de animação de foco e evite instalar plugins visuais como `hyprbars` ou `borders-plus-plus`.
+- [ ] Restaure o atalho oficial do seletor de wallpapers do Caelestia (`SUPER+W`) usando o comando da CLI Caelestia instalado e verifique que ele não abre a página de configurações. Mantenha `SUPER+1` até `SUPER+9` mapeados para a troca de workspace.
+- [ ] Substitua o caminho absoluto extraído do Zen pelo comando estável de inicialização `zen-browser` fornecido por `zen-browser-bin`.
+- [ ] Instale/atualize o serviço de usuário `nwg-dock-hyprland` e seu caminho de tema dinâmico do Caelestia somente quando o serviço estiver disponível; mantenha nos templates a transparência do dock, a altura baixa da borda, o fundo com a cor do tema, a posição elevada e um feedback mais forte ao passar/clicar.
+- [ ] Torne as operações de serviço de usuário explícitas e idempotentes (`systemctl --user daemon-reload`, habilitar/reiniciar apenas unidades gerenciadas). Não habilite serviços não relacionados.
+- [ ] Habilite TRIM semanal, scrub mensal de Btrfs e timeline/limpeza do Snapper somente quando o sistema de arquivos, a configuração e as unidades systemd correspondentes estiverem disponíveis; informe a manutenção ignorada sem bloquear a configuração do desktop.
+- [ ] Teste os caminhos do hyprpm, a ausência do plugin antigo, as strings exatas dos atalhos de teclado, a idempotência das unidades de serviço e os rastros de comandos do dry-run usando fixtures.
 
-Verification:
+Verificação:
 
 ```bash
 bats tests/bats/integrations.bats
@@ -211,20 +211,20 @@ shellcheck lib/services.sh
 
 Commit: `feat: integrate official hyprfocus and desktop services`
 
-## Task 7: Add desktop integrations and user-facing localization defaults
+## Tarefa 7: adicionar integrações de desktop e padrões de localização voltados ao usuário
 
-**Files:** `lib/services.sh`, `config/caelestia/**`, `config/fish/**`, `docs/COMPONENTS.md`, `docs/RECOVERY.md`, `tests/bats/desktop-integrations.bats`
+**Arquivos:** `lib/services.sh`, `config/caelestia/**`, `config/fish/**`, `docs/COMPONENTS.md`, `docs/RECOVERY.md`, `tests/bats/desktop-integrations.bats`
 
-- [ ] Configure user Flathub idempotently and verify the remote scope is `user`; do not write system-wide remotes by default.
-- [ ] Provide Bazaar/Pamac availability checks and document that package installation/update actions remain user-confirmed by the GUI or package manager.
-- [ ] Install optional Flatpak manifest entries only after their exact IDs are verified and only after the user-level Flathub remote is ready; record unavailable optional IDs without failing the desktop setup.
-- [ ] Configure the approved pt-BR local translation/overrides without claiming upstream support. Keep untranslated upstream strings visible in a documented fallback list rather than silently corrupting text.
-- [ ] Normalize audio device labels at the presentation layer, preserve full device names in tooltips or details, and keep Bluetooth battery percentage behind a settings toggle with a stable default.
-- [ ] Keep the wallpaper carousel’s central image undimmed, dim only the selection backdrop, support arrow navigation and outside-click dismissal, and apply the selected wallpaper through the normal Caelestia path.
-- [ ] Keep lock screen, energy controls, updates, plugins, display, Bluetooth, and wallpaper pages aligned with the current theme and Portuguese labels; do not alter firmware or BIOS settings.
-- [ ] Test remote idempotency, localization fallback, label truncation/tooltip behavior, toggle persistence, and the wallpaper-picker state transitions from static fixtures.
+- [ ] Configure o Flathub do usuário de forma idempotente e verifique que o escopo do remoto é `user`; não escreva remotos de todo o sistema por padrão.
+- [ ] Forneça verificações de disponibilidade do Bazaar/Pamac e documente que as ações de instalação/atualização de pacotes continuam sendo confirmadas pelo usuário na GUI ou no gerenciador de pacotes.
+- [ ] Instale entradas opcionais do manifesto Flatpak somente após verificar seus IDs exatos e somente depois que o remoto Flathub no nível do usuário estiver pronto; registre IDs opcionais indisponíveis sem falhar a configuração do desktop.
+- [ ] Configure a tradução/overrides locais aprovados em pt-BR sem alegar suporte upstream. Mantenha as strings upstream não traduzidas visíveis em uma lista de fallback documentada, em vez de corromper o texto silenciosamente.
+- [ ] Normalize os rótulos de dispositivos de áudio na camada de apresentação, preserve os nomes completos dos dispositivos em tooltips ou detalhes e mantenha a porcentagem da bateria Bluetooth atrás de uma alternância de configurações com um padrão estável.
+- [ ] Mantenha a imagem central do carrossel de wallpapers sem escurecimento, escureça apenas o fundo da seleção, ofereça navegação por setas e fechamento ao clicar fora e aplique o wallpaper selecionado pelo caminho normal do Caelestia.
+- [ ] Mantenha as páginas de tela de bloqueio, controles de energia, atualizações, plugins, tela, Bluetooth e wallpapers alinhadas ao tema atual e aos rótulos em português; não altere configurações de firmware ou BIOS.
+- [ ] Teste a idempotência do remoto, o fallback de localização, o comportamento de truncamento/tooltip dos rótulos, a persistência da alternância e as transições de estado do seletor de wallpapers a partir de fixtures estáticas.
 
-Verification:
+Verificação:
 
 ```bash
 bats tests/bats/desktop-integrations.bats
@@ -232,17 +232,17 @@ bats tests/bats/desktop-integrations.bats
 
 Commit: `feat: preserve desktop integrations and pt-br defaults`
 
-## Task 8: Add the read-only `cachy-health` audit command
+## Tarefa 8: adicionar o comando de auditoria somente leitura `cachy-health`
 
-**Files:** `scripts/cachy-health`, `lib/verify.sh`, `tests/bats/health.bats`, `docs/HARDWARE.md`, `docs/RECOVERY.md`
+**Arquivos:** `scripts/cachy-health`, `lib/verify.sh`, `tests/bats/health.bats`, `docs/HARDWARE.md`, `docs/RECOVERY.md`
 
-- [ ] Report OS/kernel, CPU driver/governor, ZRAM, swap, Btrfs device stats, Snapper/timers, TRIM, package update count, orphan count, firmware update availability, Hyprland/Caelestia versions, and user-service state.
-- [ ] Classify findings as OK, NOTICE, or ACTION with a remediation explanation; do not automatically change a setting, remove packages, run firmware updates, enable Secure Boot, or change CPPC.
-- [ ] Make every probe optional and timeout-safe so a missing tool produces a notice instead of aborting the whole report.
-- [ ] Support `--json` for scripts while keeping the default human-readable Portuguese report. Escape JSON correctly and use stable field names.
-- [ ] Add fixture tests for healthy, missing-tool, unsupported-filesystem, pending-update, and command-failure scenarios.
+- [ ] Informe SO/kernel, driver/governador da CPU, ZRAM, swap, estatísticas de dispositivos Btrfs, Snapper/timers, TRIM, contagem de atualizações de pacotes, contagem de órfãos, disponibilidade de atualizações de firmware, versões do Hyprland/Caelestia e estado dos serviços de usuário.
+- [ ] Classifique os achados como OK, NOTICE ou ACTION com uma explicação de remediação; não altere automaticamente uma configuração, remova pacotes, execute atualizações de firmware, habilite Secure Boot nem altere CPPC.
+- [ ] Torne cada sondagem opcional e segura contra timeout, para que uma ferramenta ausente produza um aviso em vez de abortar todo o relatório.
+- [ ] Suporte `--json` para scripts, mantendo o relatório padrão legível por humanos em português. Faça o escape correto do JSON e use nomes de campos estáveis.
+- [ ] Adicione testes de fixture para cenários saudável, ferramenta ausente, sistema de arquivos incompatível, atualização pendente e falha de comando.
 
-Verification:
+Verificação:
 
 ```bash
 bats tests/bats/health.bats
@@ -251,18 +251,18 @@ shellcheck scripts/cachy-health lib/verify.sh
 
 Commit: `feat: add read-only cachyos health audit`
 
-## Task 9: Compose the installer flow, safety gates, and recovery messaging
+## Tarefa 9: compor o fluxo do instalador, as barreiras de segurança e as mensagens de recuperação
 
-**Files:** `install.sh`, `lib/*.sh`, `scripts/restore-backup`, `tests/bats/installer.bats`, `tests/smoke.sh`, `tests/fixtures/`
+**Arquivos:** `install.sh`, `lib/*.sh`, `scripts/restore-backup`, `tests/bats/installer.bats`, `tests/smoke.sh`, `tests/fixtures/`
 
-- [ ] Compose the flow in this order: parse arguments; preflight; resolve manifests; show plan; confirm; capture backups/snapshot; install packages; render configs; configure user integrations; configure plugin/services; run validations; print rollback and health commands.
-- [ ] In `--dry-run`, show all planned package, file, plugin, service, Flatpak, and snapshot actions without mutating state or requiring root.
-- [ ] In normal mode, stop on required failures, preserve the backup reference in the error message, and never continue after a failed package transaction or failed atomic config write.
-- [ ] In `--yes`, suppress only confirmations explicitly listed in the plan; still print privileged commands and rely on the visible terminal for authentication.
-- [ ] Write a machine-readable run record containing timestamp, version, selected options, installed/skipped components, and backup/snapshot IDs, excluding passwords and personal file contents.
-- [ ] Add end-to-end fixture tests covering clean install, rerun, dry-run, optional component failure, required component failure, restore, and interruption cleanup.
+- [ ] Componha o fluxo nesta ordem: analisar argumentos; verificações preliminares; resolver manifestos; exibir o plano; confirmar; capturar backups/snapshot; instalar pacotes; renderizar configurações; configurar integrações do usuário; configurar plugin/serviços; executar validações; exibir comandos de reversão e saúde.
+- [ ] Em `--dry-run`, mostre todas as ações planejadas de pacotes, arquivos, plugins, serviços, Flatpak e snapshots sem mutar o estado nem exigir root.
+- [ ] No modo normal, pare diante de falhas obrigatórias, preserve a referência do backup na mensagem de erro e nunca continue após uma transação de pacotes falha ou uma escrita atômica de configuração falha.
+- [ ] Em `--yes`, suprima apenas as confirmações explicitamente listadas no plano; ainda exiba os comandos privilegiados e dependa do terminal visível para autenticação.
+- [ ] Escreva um registro de execução legível por máquina contendo timestamp, versão, opções selecionadas, componentes instalados/ignorados e IDs de backup/snapshot, excluindo senhas e conteúdo de arquivos pessoais.
+- [ ] Adicione testes de fixture ponta a ponta cobrindo instalação limpa, nova execução, dry-run, falha de componente opcional, falha de componente obrigatório, restauração e limpeza após interrupção.
 
-Verification:
+Verificação:
 
 ```bash
 bats tests/bats/installer.bats
@@ -271,19 +271,19 @@ bash -n install.sh lib/*.sh scripts/*.sh
 
 Commit: `feat: compose safe idempotent setup workflow`
 
-## Task 10: Add CI, source-policy enforcement, and documentation for one-command use
+## Tarefa 10: adicionar CI, aplicação da política de origem e documentação para uso com um comando
 
-**Files:** `.github/workflows/ci.yml`, `scripts/check-source-policy.sh`, `.shellcheckrc`, `.editorconfig`, `README.md`, `docs/COMPONENTS.md`, `docs/HARDWARE.md`, `docs/RECOVERY.md`, `docs/troubleshooting.md`, `tests/bats/**`, `tests/smoke.sh`
+**Arquivos:** `.github/workflows/ci.yml`, `scripts/check-source-policy.sh`, `.shellcheckrc`, `.editorconfig`, `README.md`, `docs/COMPONENTS.md`, `docs/HARDWARE.md`, `docs/RECOVERY.md`, `docs/troubleshooting.md`, `tests/bats/**`, `tests/smoke.sh`
 
-- [ ] Add CI jobs for Bash syntax, ShellCheck, shfmt check, Bats tests, source-policy scan, manifest validation, and `git diff --check`.
-- [ ] Make the source-policy script fail on absolute `/home/` paths, current-user names, private keys, common token assignments, binary plugin files, `eval`, and uncontrolled `sudo`; allow only the three documented placeholders and explicit command names.
-- [ ] Document the public command using the versioned raw URL, explain the trust model, show `--dry-run` first, list package/AUR/Flatpak behavior, and state the scope exclusions.
-- [ ] Document recovery with `--restore`, Snapper snapshot discovery, manual service reload, and the read-only `cachy-health` command.
-- [ ] Document how to contribute translation/localization improvements upstream without including personal screenshots, credentials, or machine paths.
-- [ ] Add a release checklist requiring a clean CI run, a fresh CachyOS/Hyprland validation, an idempotent second run, and a reviewed version tag before publishing the raw install URL.
-- [ ] Add `tests/smoke.sh --dry-run` as the fixture-home smoke entrypoint required by the specification and run it in CI.
+- [ ] Adicione jobs de CI para sintaxe Bash, ShellCheck, verificação do shfmt, testes Bats, varredura da política de origem, validação de manifestos e `git diff --check`.
+- [ ] Faça o script de política de origem falhar para caminhos absolutos `/home/`, nomes do usuário atual, chaves privadas, atribuições comuns de tokens, arquivos binários de plugins, `eval` e `sudo` sem controle; permita apenas os três placeholders documentados e nomes explícitos de comandos.
+- [ ] Documente o comando público usando a URL raw versionada, explique o modelo de confiança, mostre primeiro o `--dry-run`, liste o comportamento de pacotes/AUR/Flatpak e declare as exclusões de escopo.
+- [ ] Documente a recuperação com `--restore`, a descoberta de snapshots do Snapper, a recarga manual de serviços e o comando `cachy-health` somente leitura.
+- [ ] Documente como contribuir com melhorias de tradução/localização upstream sem incluir screenshots pessoais, credenciais ou caminhos da máquina.
+- [ ] Adicione uma checklist de release exigindo uma execução limpa do CI, uma validação em um CachyOS/Hyprland novo, uma segunda execução idempotente e uma tag de versão revisada antes de publicar a URL raw de instalação.
+- [ ] Adicione `tests/smoke.sh --dry-run` como entrypoint de smoke test em uma home de fixture exigido pela especificação e execute-o no CI.
 
-Verification:
+Verificação:
 
 ```bash
 shellcheck install.sh lib/*.sh scripts/*.sh
@@ -295,18 +295,18 @@ git diff --check
 
 Commit: `ci: enforce installer quality and source policy`
 
-## Task 11: Validate on the live host and publish the first version
+## Tarefa 11: validar no host ativo e publicar a primeira versão
 
-**Files:** `docs/validation/live-host-YYYY-MM-DD.md`, `README.md`, `docs/COMPONENTS.md`, `docs/HARDWARE.md`, `docs/RECOVERY.md`
+**Arquivos:** `docs/validation/live-host-YYYY-MM-DD.md`, `README.md`, `docs/COMPONENTS.md`, `docs/HARDWARE.md`, `docs/RECOVERY.md`
 
-- [ ] Run the full dry-run on the current host and compare its plan against the validated live setup: Caelestia shell/CLI, pt-BR overrides, wallpaper picker, dock, Fish theme, Hyprfocus, energy pages, audio label normalization, Bluetooth percentage toggle, and workspace keybinds.
-- [ ] Run the real installer from a visible Kitty terminal only after reviewing the plan and confirming the backup path. Do not type or relay the user’s password.
-- [ ] Verify the post-install session: `SUPER+W` opens the wallpaper selector; arrow/click/outside-click behavior works; `SUPER+1..9` switch workspaces; dock and theme reload; Caelestia pages remain Portuguese; audio labels stay compact; restore metadata exists.
-- [ ] Execute the second run and confirm no duplicate config lines, services, plugin registrations, package transactions, or Flatpak remotes.
-- [ ] Run `cachy-health --json` and save only sanitized findings in the validation report; exclude usernames, serials, personal paths, and media.
-- [ ] Review the final tree with `git status`, source-policy scan, CI results, and a clean diff. Tag `v1.0.0` only after the live validation passes and the user explicitly authorizes publication.
+- [ ] Execute o dry-run completo no host atual e compare seu plano com a configuração ativa validada: shell/CLI Caelestia, overrides pt-BR, seletor de wallpapers, dock, tema do Fish, Hyprfocus, páginas de energia, normalização dos rótulos de áudio, alternância da porcentagem do Bluetooth e atalhos de teclado dos workspaces.
+- [ ] Execute o instalador real a partir de um terminal Kitty visível somente depois de revisar o plano e confirmar o caminho do backup. Não digite nem retransmita a senha do usuário.
+- [ ] Verifique a sessão pós-instalação: `SUPER+W` abre o seletor de wallpapers; o comportamento de setas/clique/clique fora funciona; `SUPER+1..9` troca de workspace; dock e tema recarregam; as páginas do Caelestia permanecem em português; os rótulos de áudio continuam compactos; os metadados de restauração existem.
+- [ ] Execute novamente e confirme que não há linhas de configuração, serviços, registros de plugins, transações de pacotes ou remotos Flatpak duplicados.
+- [ ] Execute `cachy-health --json` e salve apenas achados sanitizados no relatório de validação; exclua nomes de usuário, números de série, caminhos pessoais e mídia.
+- [ ] Revise a árvore final com `git status`, a varredura da política de origem, os resultados do CI e um diff limpo. Crie a tag `v1.0.0` somente após a validação ativa passar e o usuário autorizar explicitamente a publicação.
 
-Verification:
+Verificação:
 
 ```bash
 git status --short
@@ -316,18 +316,18 @@ bats tests/bats
 
 Commit: `docs: record first live-host validation`
 
-## Final self-review checklist
+## Checklist final de autorrevisão
 
-- [ ] Every requirement in the approved spec has an implementation task and a verification command.
-- [ ] The package manifest does not duplicate `caelestia-cli`; it appears only in the AUR list unless live repository verification proves otherwise.
-- [ ] No task copies `fish_variables`, the stale `hyprfocus.so`, the extracted Zen binary, wallpapers, credentials, or hardware identifiers.
-- [ ] `SUPER+W`, workspace shortcuts, dock behavior, Portuguese localization, theme integration, and optional Bluetooth battery percentage are all covered by tests or an explicit live-host check.
-- [ ] Restore behavior, dry-run behavior, privileged-command visibility, and AUR failure behavior are unambiguous.
-- [ ] Search for unfinished planning placeholders and suspicious paths:
+- [ ] Cada requisito da especificação aprovada tem uma tarefa de implementação e um comando de verificação.
+- [ ] O manifesto de pacotes não duplica `caelestia-cli`; ele aparece apenas na lista AUR, salvo se a verificação no repositório ativo provar o contrário.
+- [ ] Nenhuma tarefa copia `fish_variables`, o `hyprfocus.so` antigo, o binário Zen extraído, wallpapers, credenciais ou identificadores de hardware.
+- [ ] `SUPER+W`, atalhos dos workspaces, comportamento do dock, localização em português, integração do tema e porcentagem opcional da bateria Bluetooth são todos cobertos por testes ou por uma verificação explícita no host ativo.
+- [ ] O comportamento de restauração, o comportamento de dry-run, a visibilidade dos comandos privilegiados e o comportamento de falha do AUR são inequívocos.
+- [ ] Procure placeholders de planejamento inacabados e caminhos suspeitos:
 
 ```bash
 rg -n 'TODO|TBD|FIXME|/home/gabriel|/home/|BEGIN (RSA|OPENSSH) PRIVATE KEY|token|password|secret' . --glob '!docs/superpowers/specs/**' --glob '!docs/superpowers/plans/**'
 git diff --check
 ```
 
-- [ ] Confirm the plan file itself has no placeholder wording, no unbounded destructive command, and no instruction to handle passwords.
+- [ ] Confirme que o próprio arquivo de plano não contém texto-placeholder, nenhum comando destrutivo sem limites e nenhuma instrução para manipular senhas.

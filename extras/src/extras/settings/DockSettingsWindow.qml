@@ -10,6 +10,7 @@ import Quickshell
 import Caelestia.Config
 import qs.modules.nexus
 import qs.services
+import qs.extras as Extras
 
 FloatingWindow {
     id: win
@@ -35,7 +36,7 @@ FloatingWindow {
         win.visible = !win.visible;
     }
 
-    title: qsTr("Ajustes da Dock")
+    title: Extras.I18n.t("dock_settings.window_title")
     color: "transparent"
     surfaceFormat.opaque: false
     implicitWidth: panelWidth

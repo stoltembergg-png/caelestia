@@ -1,12 +1,12 @@
-# Components and attribution
+# Componentes e atribuição
 
-The target platform is CachyOS, an Arch-based distribution, with a logged-in
-Hyprland desktop session. Caelestia, Quickshell, nwg-dock-hyprland, Fish,
-Pamac, Flatpak/Flathub, Bazaar, Snapper, Btrfs, fwupd, and the official
-Hyprland plugin ecosystem remain upstream components; this repository only
-provides documented selection and portable profile metadata.
+A plataforma-alvo é o CachyOS, uma distribuição baseada em Arch, com uma sessão
+de desktop Hyprland autenticada. Caelestia, Quickshell, nwg-dock-hyprland, Fish,
+Pamac, Flatpak/Flathub, Bazaar, Snapper, Btrfs, fwupd e o ecossistema oficial de
+plugins do Hyprland continuam sendo componentes upstream; este repositório fornece
+apenas uma seleção documentada e metadados de perfil portáveis.
 
-The setup assumes Kitty or another visible terminal for interactive privileged
-operations. It never uses Alacritty and never handles passwords. A normal user
-with sudo and network access is required. Btrfs and Snapper are optional and
-are used only when already available.
+A configuração pressupõe o Kitty ou outro terminal visível para operações
+privilegiadas interativas. Ela nunca usa Alacritty nem manipula senhas. É necessário
+um usuário comum com sudo e acesso à rede. Btrfs e Snapper são opcionais e
+só são usados quando já estão disponíveis.

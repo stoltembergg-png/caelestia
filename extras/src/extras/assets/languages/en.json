@@ -49,7 +49,17 @@
       "untitled": "Untitled note",
       "tap_to_write": "Tap to write...",
       "placeholder": "Write in markdown..."
+    },
+    "draw": {
+      "default_palette": "Default",
+      "palette": "Palette"
     }
+  },
+  "shortcuts": {
+    "quickactions": "Toggle quick actions panel",
+    "dock": "Toggle dock",
+    "nolimits": "Toggle No Limits (KodexBar) panel",
+    "docksettings": "Toggle dock settings window"
   },
   "guide": {
     "dock": {
@@ -132,6 +142,30 @@
         "desc": "Prevent windows from taking space occupied by the dock"
       }
     }
+  },
+  "dock_settings": {
+    "title": "Dock",
+    "window_title": "Dock settings",
+    "behavior": "Behavior",
+    "always_visible": "Always visible",
+    "always_visible_desc": "Keep the dock visible even without pinned apps",
+    "autohide": "Auto-hide",
+    "autohide_desc": "Hide the dock when the cursor is away from it",
+    "autohide_delay": "Hide delay",
+    "autohide_delay_desc": "Time in milliseconds before hiding the dock",
+    "fullscreen_hide": "Hide in fullscreen",
+    "fullscreen_hide_desc": "Hide the dock when a window is fullscreen",
+    "reserve_space": "Reserve space",
+    "reserve_space_desc": "Prevent windows from occupying the dock area",
+    "appearance": "Appearance",
+    "transparency": "Transparency",
+    "icon_size": "Icon size",
+    "icon_size_desc": "Size of dock icons in pixels",
+    "animations": "Animations",
+    "animations_desc": "Enable opening, hover, and scale transitions",
+    "hover_intensity": "Hover intensity",
+    "cascade_effect": "Cascade effect",
+    "cascade_effect_desc": "Enlarge neighboring icons as the cursor approaches"
   },
   "kodexbar": {
     "limits": "Limits",

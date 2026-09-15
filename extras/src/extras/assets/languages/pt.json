@@ -49,7 +49,17 @@
       "untitled": "Nota sem título",
       "tap_to_write": "Toque para escrever...",
       "placeholder": "Escreva em markdown..."
+    },
+    "draw": {
+      "default_palette": "Padrão",
+      "palette": "Paleta"
     }
+  },
+  "shortcuts": {
+    "quickactions": "Alternar painel de ações rápidas",
+    "dock": "Alternar dock",
+    "nolimits": "Alternar painel No Limits (KodexBar)",
+    "docksettings": "Alternar janela de ajustes da dock"
   },
   "guide": {
     "dock": {
@@ -132,6 +142,30 @@
         "desc": "Impede janelas de ocuparem o espaço da dock"
       }
     }
+  },
+  "dock_settings": {
+    "title": "Dock",
+    "window_title": "Ajustes da Dock",
+    "behavior": "Comportamento",
+    "always_visible": "Sempre visível",
+    "always_visible_desc": "Manter a dock visível mesmo sem aplicativos fixados",
+    "autohide": "Auto-ocultar",
+    "autohide_desc": "Esconder a dock quando o cursor estiver longe dela",
+    "autohide_delay": "Atraso para ocultar",
+    "autohide_delay_desc": "Tempo em milissegundos antes de esconder a dock",
+    "fullscreen_hide": "Ocultar em tela cheia",
+    "fullscreen_hide_desc": "Esconder a dock quando houver uma janela em tela cheia",
+    "reserve_space": "Reservar espaço",
+    "reserve_space_desc": "Impedir que as janelas ocupem a área da dock",
+    "appearance": "Aparência",
+    "transparency": "Transparência",
+    "icon_size": "Tamanho dos ícones",
+    "icon_size_desc": "Tamanho dos ícones da dock em pixels",
+    "animations": "Animações",
+    "animations_desc": "Ativar transições de abertura, hover e escala",
+    "hover_intensity": "Intensidade do hover",
+    "cascade_effect": "Efeito cascata",
+    "cascade_effect_desc": "Aumentar os ícones vizinhos conforme o cursor se aproxima"
   },
   "kodexbar": {
     "limits": "Limites",

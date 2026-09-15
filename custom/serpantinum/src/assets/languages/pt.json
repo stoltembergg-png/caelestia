@@ -781,6 +781,14 @@
         "pomo_skipped_focus_body": "Sessão de foco pulada. Indo para a pausa.",
         "pomo_skipped_break_body": "Pausa pulada. De volta ao foco."
       }
+    },
+    "notepad": {
+      "title": "Notas",
+      "new": "Nova",
+      "empty_list": "Nenhuma nota ainda.\nToque em Nova para criar uma.",
+      "untitled": "Nota sem título",
+      "tap_to_write": "Toque para escrever...",
+      "placeholder": "Escreva em markdown..."
     }
   },
   "screenshot": {
@@ -853,6 +861,7 @@
     "master_output_volume": "Volume principal de saída",
     "no_active_streams": "Nenhum fluxo ativo",
     "active_default": "Padrão ativo",
+    "virtual_output": "Saída virtual",
       "analog": "Analógico",
       "internal_audio": "Áudio integrado",
     "tabs": {
@@ -1046,7 +1055,8 @@
       "monitors_detect": "Consulta saídas de vídeo ativas e taxas de atualização",
       "location_manual": "Define coordenadas e fuso manualmente",
       "blue_light_filter": "Ajusta temperatura de cor e ciclo dia/noite automático",
-      "translate": "Tradutor instantâneo de texto e seleção"
+      "translate": "Tradutor instantâneo de texto e seleção",
+      "minimize": "Minimiza janelas na dock (workspace especial) e restaura-as"
     }
   },
   "daemon": {
@@ -1247,5 +1257,15 @@
   "memory_save": "Salvar",
   "memory_saved": "salva",
   "running": "em andamento"
-}
+},
+  "minimize": {
+    "error_hyprland_only": "Erro: minimizar só é compatível com o Hyprland.",
+    "error_no_window": "Erro: não há janela ativa para minimizar.",
+    "error_no_address": "Erro: nenhum endereço de janela informado para restaurar.",
+    "minimized_title": "Janela minimizada",
+    "restored_title": "Janela restaurada",
+    "help": "Uso: serpantinum minimize [[address]|restore <address>|list]",
+    "error_unknown_arg": "Erro: argumento desconhecido '{ARG}'.",
+    "error_already_minimized": "A janela já está minimizada. Restaure-a pela dock."
+  }
 }

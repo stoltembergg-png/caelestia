@@ -1,11 +1,11 @@
-# Hardware and session assumptions
+# Premissas de hardware e sessão
 
-The supported target is the current CachyOS machine with a logged-in Hyprland
-session. The guarded `DP-1` monitor profile is a same-machine convenience and
-must not be applied blindly to another output; another layout should skip or
-edit that profile.
+O alvo compatível é a máquina CachyOS atual com uma sessão Hyprland autenticada.
+O perfil de monitor protegido `DP-1` é uma conveniência para a mesma máquina e
+não deve ser aplicado cegamente a outra saída; outro layout deve ignorar ou
+editar esse perfil.
 
-Btrfs and Snapper support is optional. BIOS settings, Secure Boot keys,
-firmware updates, partitions, bootloaders, and CPU/CPPC settings are explicit
-exclusions. CPPC may be documented as an observation or optional host choice,
-but this repository never changes it.
+O suporte a Btrfs e Snapper é opcional. Configurações de BIOS, chaves de Secure Boot,
+atualizações de firmware, partições, bootloaders e configurações de CPU/CPPC são
+exclusões explícitas. CPPC pode ser documentado como observação ou escolha opcional
+do host, mas este repositório nunca o altera.

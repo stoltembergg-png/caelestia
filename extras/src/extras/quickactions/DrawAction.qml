@@ -82,7 +82,7 @@ Item {
 
     property var colorPalettes: [
         { 
-            name: "Default", 
+            name: I18n.t("quickactions.draw.default_palette"),
             colors: [
                 ThemeBackend.red.toString(),
                 ThemeBackend.peach.toString(),
@@ -839,7 +839,7 @@ Item {
                     spacing: s(10)
 
                     Text {
-                        text: root.colorPalettes[root.activePaletteIndex] ? root.colorPalettes[root.activePaletteIndex].name : "Palette"
+                        text: root.colorPalettes[root.activePaletteIndex] ? root.colorPalettes[root.activePaletteIndex].name : I18n.t("quickactions.draw.palette")
                         color: root.baseTextColor
                         font.pixelSize: s(14)
                         font.bold: true
