@@ -847,6 +847,7 @@
     "open_handoffs": "Handoffs abiertos",
     "recent": "Recientes",
     "no_pages": "Aún no hay páginas",
+    "no_data": "Sin datos",
     "open_web": "Abrir web UI",
     "updated": "actualizado",
     "last_activity": "Última actividad:",
@@ -972,6 +973,7 @@
     "master_output_volume": "Volumen de salida principal",
     "no_active_streams": "Sin transmisiones activas",
     "active_default": "Predeterminado activo",
+    "virtual_output": "Salida virtual",
       "analog": "Analógico",
       "internal_audio": "Audio integrado",
     "tabs": {
@@ -1165,7 +1167,8 @@
       "monitors_detect": "Consultar salidas de pantalla activas y frecuencias de actualización",
       "location_manual": "Establecer coordenadas geográficas y zona horaria manualmente",
       "blue_light_filter": "Ajustar la temperatura de color y el horario automático día/noche",
-      "translate": "Traducción instantánea de texto y selecciones"
+      "translate": "Traducción instantánea de texto y selecciones",
+      "minimize": "Minimizar ventanas en el dock (espacio de trabajo especial) y restaurarlas"
     }
   },
   "daemon": {
@@ -1298,5 +1301,15 @@
   },
   "datetime": {
     "full_date": "dddd, d 'de' MMMM"
+  },
+  "minimize": {
+    "error_hyprland_only": "Error: minimizar solo es compatible con Hyprland.",
+    "error_no_window": "Error: no hay ninguna ventana activa que minimizar.",
+    "error_no_address": "Error: no se indicó ninguna dirección de ventana para restaurar.",
+    "minimized_title": "Ventana minimizada",
+    "restored_title": "Ventana restaurada",
+    "help": "Uso: serpantinum minimize [[address]|restore <address>|list]",
+    "error_unknown_arg": "Error: argumento desconocido '{ARG}'.",
+    "error_already_minimized": "La ventana ya está minimizada. Restáurala desde el dock."
   }
 }
