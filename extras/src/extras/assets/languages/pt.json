@@ -314,11 +314,11 @@
       "no_account": "—",
       "unread": "Mensagens não lidas",
       "actions": "Ações",
-      "connect_qr": "Conectar por QR code",
+      "connect_qr": "Conectar por código QR",
       "connect_qr_hint": "Gerar um novo código de pareamento",
       "open_panel": "Abrir painel",
-      "open_panel_hint": "Mostrar o drawer do WhatsApp",
-      "confirm_logout": "Confirmar logout",
+      "open_panel_hint": "Mostrar o painel lateral do WhatsApp",
+      "confirm_logout": "Confirmar saída",
       "logout": "Sair",
       "confirm_logout_hint": "Toque de novo para desconectar",
       "unlink_device": "Desvincular este dispositivo",
@@ -335,14 +335,19 @@
       "open": "Abrir"
     },
     "shortcuts": {
-      "toggle_drawer": "Alternar drawer do WhatsApp"
+      "toggle_drawer": "Alternar painel lateral do WhatsApp"
     },
     "client": {
       "qr_timeout": "Tempo esgotado ao gerar o código; tente de novo",
       "auth_error": "Erro de autenticação",
       "group": "Grupo",
       "contact_number": "Contato {n}",
-      "contact": "Contato"
+      "contact": "Contato",
+      "unknown": "Algo deu errado",
+      "send_failed": "Falha ao enviar",
+      "timeout": "Tempo esgotado na solicitação",
+      "disconnected": "Conexão perdida",
+      "pairing_failed": "Falha ao iniciar o pareamento"
     }
   }
 }

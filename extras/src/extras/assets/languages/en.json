@@ -342,7 +342,12 @@
       "auth_error": "Authentication error",
       "group": "Group",
       "contact_number": "Contact {n}",
-      "contact": "Contact"
+      "contact": "Contact",
+      "unknown": "Something went wrong",
+      "send_failed": "Failed to send",
+      "timeout": "Request timed out",
+      "disconnected": "Connection lost",
+      "pairing_failed": "Failed to start pairing"
     }
   }
 }
