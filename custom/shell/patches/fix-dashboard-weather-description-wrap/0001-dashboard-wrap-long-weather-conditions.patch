@@ -1,0 +1,26 @@
+From 025564f0d94dcee00762390d614720064d70dd92 Mon Sep 17 00:00:00 2001
+From: Gabriel <312632452+stoltembergg-png@users.noreply.github.com>
+Date: Sat, 5 Sep 2026 14:15:26 -0300
+Subject: dashboard: wrap long weather conditions
+
+---
+ modules/dashboard/dash/SmallWeather.qml | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/modules/dashboard/dash/SmallWeather.qml b/modules/dashboard/dash/SmallWeather.qml
+index cd5f3e40..b9b82bc6 100644
+--- a/modules/dashboard/dash/SmallWeather.qml
++++ b/modules/dashboard/dash/SmallWeather.qml
+@@ -50,7 +50,8 @@ Item {
+             text: Weather.description
+             font: Tokens.font.body.small
+ 
+-            elide: Text.ElideRight
++            wrapMode: Text.WordWrap
++            maximumLineCount: 2
+             width: Math.min(implicitWidth, root.parent.width - icon.implicitWidth - info.anchors.leftMargin - Tokens.padding.extraLargeIncreased)
+         }
+     }
+-- 
+2.55.0
+

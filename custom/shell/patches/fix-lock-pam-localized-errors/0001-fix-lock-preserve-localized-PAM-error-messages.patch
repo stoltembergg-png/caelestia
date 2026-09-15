@@ -1,0 +1,47 @@
+From 78aa798f047a5b08864336d1815c8791dfac5ff6 Mon Sep 17 00:00:00 2001
+From: Gabriel <312632452+stoltembergg-png@users.noreply.github.com>
+Date: Sat, 5 Sep 2026 15:14:37 -0300
+Subject: fix(lock): preserve localized PAM error messages
+
+---
+ modules/lock/Pam.qml                 | 10 +++++-----
+ modules/lock/center/StateMessage.qml |  2 +-
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/modules/lock/Pam.qml b/modules/lock/Pam.qml
+index f6c97470..2d371401 100644
+--- a/modules/lock/Pam.qml
++++ b/modules/lock/Pam.qml
+@@ -79,11 +79,11 @@ Scope {
+         config: "passwd"
+         configDirectory: Quickshell.shellPath("assets/pam.d")
+ 
+-        onMessageChanged: {
+-            if (message.startsWith("The account is locked"))
+-                root.lockMessage = message;
+-            else if (root.lockMessage && message.endsWith(" left to unlock)"))
+-                root.lockMessage += "\n" + message;
++        onPamMessage: {
++            if (!message || !messageIsError)
++                return;
++
++            root.lockMessage = root.lockMessage ? root.lockMessage + "\n" + message : message;
+         }
+ 
+         onResponseRequiredChanged: {
+diff --git a/modules/lock/center/StateMessage.qml b/modules/lock/center/StateMessage.qml
+index b89c9a46..f7651798 100644
+--- a/modules/lock/center/StateMessage.qml
++++ b/modules/lock/center/StateMessage.qml
+@@ -33,7 +33,7 @@ Item {
+                 return qsTr("Face not recognized (%1/%2). Please try again.").arg(pam.howdy.tries).arg(GlobalConfig.lock.maxHowdyTries);
+         }
+ 
+-        if (pam.lockMessage) // Password max tries message
++        if (pam.lockMessage) // PAM error message
+             return pam.lockMessage;
+ 
+         // Password fail
+-- 
+2.55.0
+

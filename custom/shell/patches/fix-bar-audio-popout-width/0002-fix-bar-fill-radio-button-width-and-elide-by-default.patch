@@ -1,0 +1,61 @@
+From e89a2232e23fcf80987eea06defed77fce638dcf Mon Sep 17 00:00:00 2001
+From: 2 * r + 2 * t <61896496+soramanew@users.noreply.github.com>
+Date: Thu, 10 Sep 2026 02:44:48 +1000
+Subject: fix(bar): fill radio button width and elide by default
+
+---
+ components/controls/StyledRadioButton.qml | 8 +++-----
+ modules/bar/popouts/AudioPopout.qml       | 2 --
+ 2 files changed, 3 insertions(+), 7 deletions(-)
+
+diff --git a/components/controls/StyledRadioButton.qml b/components/controls/StyledRadioButton.qml
+index 3580942d..ea095797 100644
+--- a/components/controls/StyledRadioButton.qml
++++ b/components/controls/StyledRadioButton.qml
+@@ -7,11 +7,9 @@ import qs.services
+ RadioButton {
+     id: root
+ 
+-    property real maximumTextWidth: -1
+-
+     font: Tokens.font.body.small
+ 
+-    implicitWidth: implicitIndicatorWidth + (root.maximumTextWidth > 0 ? Math.min(implicitContentWidth, root.maximumTextWidth) : implicitContentWidth) + contentItem.anchors.leftMargin
++    implicitWidth: implicitIndicatorWidth + implicitContentWidth + contentItem.anchors.leftMargin
+     implicitHeight: Math.max(implicitIndicatorHeight, implicitContentHeight)
+ 
+     indicator: Rectangle {
+@@ -51,8 +49,8 @@ RadioButton {
+         font: root.font
+         anchors.verticalCenter: parent.verticalCenter
+         anchors.left: outerCircle.right
++        anchors.right: parent.right
+         anchors.leftMargin: Tokens.spacing.medium
+-        width: root.maximumTextWidth > 0 ? root.maximumTextWidth : implicitWidth
+-        elide: root.maximumTextWidth > 0 ? Text.ElideRight : Text.ElideNone
++        elide: Text.ElideRight
+     }
+ }
+diff --git a/modules/bar/popouts/AudioPopout.qml b/modules/bar/popouts/AudioPopout.qml
+index f3ff7c04..d9a07287 100644
+--- a/modules/bar/popouts/AudioPopout.qml
++++ b/modules/bar/popouts/AudioPopout.qml
+@@ -52,7 +52,6 @@ Item {
+                 checked: Audio.sink?.id === modelData.id
+                 onClicked: Audio.setAudioSink(modelData)
+                 text: modelData.description
+-                maximumTextWidth: Math.max(0, layout.width - implicitIndicatorWidth - Tokens.spacing.medium)
+             }
+         }
+ 
+@@ -73,7 +72,6 @@ Item {
+                 checked: Audio.source?.id === modelData.id
+                 onClicked: Audio.setAudioSource(modelData)
+                 text: modelData.description
+-                maximumTextWidth: Math.max(0, layout.width - implicitIndicatorWidth - Tokens.spacing.medium)
+             }
+         }
+ 
+-- 
+2.55.0
+

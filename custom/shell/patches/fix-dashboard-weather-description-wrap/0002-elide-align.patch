@@ -1,0 +1,27 @@
+From e6196e005a78c9245009d958c2cfeb921ffb9b09 Mon Sep 17 00:00:00 2001
+From: 2 * r + 2 * t <61896496+soramanew@users.noreply.github.com>
+Date: Thu, 10 Sep 2026 21:53:28 +1000
+Subject: elide + align
+
+---
+ modules/dashboard/dash/SmallWeather.qml | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/modules/dashboard/dash/SmallWeather.qml b/modules/dashboard/dash/SmallWeather.qml
+index b9b82bc6..017ead11 100644
+--- a/modules/dashboard/dash/SmallWeather.qml
++++ b/modules/dashboard/dash/SmallWeather.qml
+@@ -50,8 +50,10 @@ Item {
+             text: Weather.description
+             font: Tokens.font.body.small
+ 
++            elide: Text.ElideRight
+             wrapMode: Text.WordWrap
+             maximumLineCount: 2
++            horizontalAlignment: Text.AlignHCenter
+             width: Math.min(implicitWidth, root.parent.width - icon.implicitWidth - info.anchors.leftMargin - Tokens.padding.extraLargeIncreased)
+         }
+     }
+-- 
+2.55.0
+
