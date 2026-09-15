@@ -16,6 +16,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import qs.extras
 import qs.extras.whatsapp
 
 Singleton {
@@ -182,7 +183,7 @@ Singleton {
         onTriggered: {
             if (root.loggedIn || root.authState === "connected" || root.qrPng.length > 0)
                 return;
-            root.lastError = "tempo esgotado ao gerar o código; tente de novo";
+            root.lastError = I18n.t("whatsapp.client.qr_timeout");
             root.authState = "needs_pairing";
         }
     }
@@ -236,6 +237,29 @@ Singleton {
         if (!err)
             return "";
         return String(err.message || err.code || err);
+    }
+
+    function _errorKey(err): string {
+        const raw = root._errorMessage(err).toLowerCase();
+        const code = err && err.code !== undefined ? String(err.code).toLowerCase() : "";
+        const value = code + " " + raw;
+        if (value.indexOf("timeout") >= 0 || value.indexOf("timed out") >= 0)
+            return "whatsapp.client.timeout";
+        if (value.indexOf("disconnected") >= 0 || value.indexOf("socket disconnected") >= 0)
+            return "whatsapp.client.disconnected";
+        if (value.indexOf("auth") >= 0 || value.indexOf("authentication") >= 0)
+            return "whatsapp.client.auth_error";
+        if (value.indexOf("send" + "_failed") >= 0 || value.indexOf("failed to send") >= 0)
+            return "whatsapp.client.send_failed";
+        return "";
+    }
+
+    function _errorText(err): string {
+        const raw = root._errorMessage(err);
+        if (raw.length > 0)
+            console.warn("whatsapp error:", raw);
+        const key = root._errorKey(err);
+        return I18n.t(key.length > 0 ? key : "whatsapp.client.unknown");
     }
 
     function _send(method, params, callback, timeout) {
@@ -471,10 +495,14 @@ Singleton {
             root.loggedIn = false;
             root.authState = "disconnected";
             root.qrPng = "";
-            root.lastError = String(data.reason || "");
+            root.lastError = data.reason ? root._errorText({
+                "message": String(data.reason)
+            }) : "";
             loginWatch.stop();
         } else if (name === "auth.error") {
-            root.lastError = String(data.message || "auth error");
+            root.lastError = data.message ? root._errorText({
+                "message": String(data.message)
+            }) : I18n.t("whatsapp.client.auth_error");
             // Um erro de pareamento encerra a tentativa: sai de "connecting"
             // para a UI mostrar o erro com a ação de tentar novamente.
             root.qrPng = "";
@@ -531,13 +559,13 @@ Singleton {
         if (!generic)
             return raw;
         if (isGroup)
-            return "Grupo";
+            return I18n.t("whatsapp.client.group");
         const num = rawNumeric ? raw : local;
         if (isLid)
-            return "Contato " + root._shortTail(num);
+            return I18n.t("whatsapp.client.contact_number", { n: root._shortTail(num) });
         if (/^[0-9]{6,}$/.test(num))
             return "+" + num;
-        return "Contato";
+        return I18n.t("whatsapp.client.contact");
     }
 
     function _field(c, base, key) {
@@ -558,20 +586,20 @@ Singleton {
         if (!m)
             return s;
         const labels = {
-            "image": "Foto",
-            "photo": "Foto",
-            "video": "Vídeo",
-            "audio": "Áudio",
-            "voice": "Áudio",
-            "document": "Documento",
-            "sticker": "Figurinha",
-            "location": "Localização",
-            "contact": "Contato",
-            "reaction": "Reação",
-            "unknown": "Mensagem",
-            "message": "Mensagem"
+            "image": I18n.t("whatsapp.media.photo"),
+            "photo": I18n.t("whatsapp.media.photo"),
+            "video": I18n.t("whatsapp.media.video"),
+            "audio": I18n.t("whatsapp.media.audio"),
+            "voice": I18n.t("whatsapp.media.audio"),
+            "document": I18n.t("whatsapp.media.document"),
+            "sticker": I18n.t("whatsapp.media.sticker"),
+            "location": I18n.t("whatsapp.media.location"),
+            "contact": I18n.t("whatsapp.media.contact"),
+            "reaction": I18n.t("whatsapp.media.reaction"),
+            "unknown": I18n.t("whatsapp.message.message"),
+            "message": I18n.t("whatsapp.message.message")
         };
-        return labels[m[1].toLowerCase()] || "Mensagem";
+        return labels[m[1].toLowerCase()] || I18n.t("whatsapp.message.message");
     }
 
     function _chatRow(c, base) {
@@ -1022,20 +1050,20 @@ Singleton {
 
     function _previewFor(m) {
         if (m.deleted)
-            return "mensagem apagada";
+            return I18n.t("whatsapp.message.deleted").toLowerCase();
         if (m.type && m.type !== "text" && m.type !== "protocol") {
             const labels = {
-                "image": "Foto",
-                "video": "Vídeo",
-                "audio": "Áudio",
-                "document": "Documento",
-                "sticker": "Figurinha",
-                "location": "Localização",
-                "contact": "Contato",
-                "reaction": "Reação",
-                "unknown": "Mensagem"
+                "image": I18n.t("whatsapp.media.photo"),
+                "video": I18n.t("whatsapp.media.video"),
+                "audio": I18n.t("whatsapp.media.audio"),
+                "document": I18n.t("whatsapp.media.document"),
+                "sticker": I18n.t("whatsapp.media.sticker"),
+                "location": I18n.t("whatsapp.media.location"),
+                "contact": I18n.t("whatsapp.media.contact"),
+                "reaction": I18n.t("whatsapp.media.reaction"),
+                "unknown": I18n.t("whatsapp.message.message")
             };
-            return labels[m.type] || "Mensagem";
+            return labels[m.type] || I18n.t("whatsapp.message.message");
         }
         return String(m.text || "");
     }
@@ -1172,7 +1200,7 @@ Singleton {
             "emoji": em
         }, function (res, err) {
             if (err)
-                root.lastError = root._errorMessage(err);
+                root.lastError = root._errorText(err);
         });
     }
 
@@ -1313,11 +1341,11 @@ Singleton {
         if (!jid.length || !p.length)
             return false;
         if (n > root.mediaSizeLimit) {
-            root.lastError = "Arquivo maior que 100 MB";
+            root.lastError = I18n.t("whatsapp.composer.file_too_large");
             return false;
         }
         if (k !== "image" && k !== "video" && k !== "audio" && k !== "document") {
-            root.lastError = "Tipo de arquivo não suportado";
+            root.lastError = I18n.t("whatsapp.composer.unsupported_file");
             return false;
         }
 
@@ -1387,7 +1415,7 @@ Singleton {
         const up = Object.assign({}, row.upload);
         up.state = "failed";
         up.pct = 0;
-        up.error = root._errorMessage(err) || "send_failed";
+        up.error = root._errorMessage(err).length > 0 ? root._errorText(err) : I18n.t("whatsapp.client.send_failed");
         messagesModel.setProperty(idx, "upload", up);
         messagesModel.setProperty(idx, "status", "failed");
         root.lastError = up.error;
@@ -1495,7 +1523,7 @@ Singleton {
                 "text": body
             }, function (res, err) {
                 if (err || !res) {
-                    root.lastError = root._errorMessage(err) || "send_failed";
+                    root.lastError = root._errorMessage(err).length > 0 ? root._errorText(err) : I18n.t("whatsapp.client.send_failed");
                     return;
                 }
                 root._appendMessageIfNew({
@@ -1521,7 +1549,7 @@ Singleton {
             "text": body
         }, function (res, err) {
             if (err || !res) {
-                root.lastError = root._errorMessage(err) || "send_failed";
+                root.lastError = root._errorMessage(err).length > 0 ? root._errorText(err) : I18n.t("whatsapp.client.send_failed");
                 return;
             }
             root._appendMessageIfNew({
@@ -1573,7 +1601,7 @@ Singleton {
             root._send("auth.start", null, function (res, err) {
                 if (err) {
                     loginWatch.stop();
-                    root.lastError = root._errorMessage(err) || "falha ao iniciar o pareamento";
+                    root.lastError = root._errorMessage(err).length > 0 ? root._errorText(err) : I18n.t("whatsapp.client.pairing_failed");
                     root.authState = "needs_pairing";
                     return;
                 }
@@ -1588,7 +1616,7 @@ Singleton {
         loginWatch.stop();
         root._send("auth.cancel", null, function (res, err) {
             if (err) {
-                root.lastError = root._errorMessage(err);
+                root.lastError = root._errorText(err);
                 if (!root.loggedIn && root.authState !== "connected")
                     root.authState = "needs_pairing";
             }
@@ -1599,7 +1627,7 @@ Singleton {
         loginWatch.stop();
         root._send("auth.logout", null, function (res, err) {
             if (err) {
-                root.lastError = root._errorMessage(err);
+                root.lastError = root._errorText(err);
                 return;
             }
             root.loggedIn = false;

@@ -11,6 +11,7 @@ import Caelestia.Config
 import qs.components
 import qs.components.containers
 import qs.services
+import qs.extras
 import qs.extras.whatsapp
 
 Item {
@@ -51,8 +52,8 @@ Item {
                 // Dia da semana em PT (consistente com "ontem"/"agora"/"min";
                 // evita misturar "ontem" com "Wed"/"Tue" do locale do sistema).
                 function weekdayPT(d): string {
-                    const days = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
-                    return days[d.getDay()] || Qt.formatDateTime(d, "ddd");
+                    const days = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+                    return I18n.t("whatsapp.chat_list.weekdays." + (days[d.getDay()] || "sun"));
                 }
 
                 // Hora relativa curta: "agora", "N min", "hh:mm", "ontem",
@@ -69,13 +70,13 @@ Item {
                     if (d.getTime() >= startOfToday) {
                         const mins = Math.floor(diff / 60000);
                         if (mins < 1)
-                            return "agora";
+                            return I18n.t("whatsapp.chat_list.now");
                         if (mins < 60)
-                            return mins + " min";
+                            return I18n.t("whatsapp.chat_list.minutes", { n: mins });
                         return Qt.formatDateTime(d, "hh:mm");
                     }
                     if (d.getTime() >= startOfToday - 86400000)
-                        return "ontem";
+                        return I18n.t("whatsapp.chat_list.yesterday");
                     if (d.getTime() >= startOfToday - 6 * 86400000)
                         return row.weekdayPT(d);
                     return Qt.formatDateTime(d, "dd/MM/yy");
@@ -163,7 +164,7 @@ Item {
 
                     StyledText {
                         width: parent.width
-                        text: row.lastMessage.length > 0 ? row.lastMessage : "—"
+                        text: row.lastMessage.length > 0 ? row.lastMessage : I18n.t("whatsapp.chat_list.empty_preview")
                         color: Colours.palette.m3onSurfaceVariant
                         font: root.compact ? Tokens.font.label.small : Tokens.font.body.small
                         elide: Text.ElideRight
@@ -197,7 +198,7 @@ Item {
 
         StyledText {
             Layout.fillWidth: true
-            text: WhatsAppClient.loggedIn ? "Nenhuma conversa ainda" : "Conecte um dispositivo para começar"
+            text: WhatsAppClient.loggedIn ? I18n.t("whatsapp.chat_list.empty_logged_in") : I18n.t("whatsapp.chat_list.empty_logged_out")
             color: Colours.palette.m3onSurfaceVariant
             font: Tokens.font.body.medium
             horizontalAlignment: Text.AlignHCenter

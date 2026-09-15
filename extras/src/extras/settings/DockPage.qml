@@ -25,7 +25,7 @@ import qs.extras as Extras
 PageBase {
     id: root
 
-    title: qsTr("Dock")
+    title: Extras.I18n.t("dock_settings.title")
 
     // Lido a cada mudança de rawSettings; qualquer setSetting reavalia a página.
     readonly property var dockSettings: Extras.Config.getSetting("dock", {})
@@ -53,27 +53,27 @@ PageBase {
         // Comportamento
         SectionHeader {
             first: true
-            text: qsTr("Comportamento")
+            text: Extras.I18n.t("dock_settings.behavior")
         }
 
         ToggleRow {
             first: true
-            text: qsTr("Sempre visível")
-            subtext: qsTr("Manter a dock visível mesmo sem aplicativos fixados")
+            text: Extras.I18n.t("dock_settings.always_visible")
+            subtext: Extras.I18n.t("dock_settings.always_visible_desc")
             checked: root.value("alwaysVisible", true)
             onToggled: root.update("alwaysVisible", checked)
         }
 
         ToggleRow {
-            text: qsTr("Auto-ocultar")
-            subtext: qsTr("Esconder a dock quando o cursor estiver longe dela")
+            text: Extras.I18n.t("dock_settings.autohide")
+            subtext: Extras.I18n.t("dock_settings.autohide_desc")
             checked: root.value("autohide", false)
             onToggled: root.update("autohide", checked)
         }
 
         StepperRow {
-            label: qsTr("Atraso para ocultar")
-            subtext: qsTr("Tempo em milissegundos antes de esconder a dock")
+            label: Extras.I18n.t("dock_settings.autohide_delay")
+            subtext: Extras.I18n.t("dock_settings.autohide_delay_desc")
             value: root.value("autohideTimeout", 1000)
             from: 0
             to: 5000
@@ -83,29 +83,29 @@ PageBase {
 
         // "checked" = ocultar em tela cheia; a chave grava o inverso dela.
         ToggleRow {
-            text: qsTr("Ocultar em tela cheia")
-            subtext: qsTr("Esconder a dock quando houver uma janela em tela cheia")
+            text: Extras.I18n.t("dock_settings.fullscreen_hide")
+            subtext: Extras.I18n.t("dock_settings.fullscreen_hide_desc")
             checked: !root.value("showOnFullscreen", false)
             onToggled: root.update("showOnFullscreen", !checked)
         }
 
         ToggleRow {
             last: true
-            text: qsTr("Reservar espaço")
-            subtext: qsTr("Impedir que as janelas ocupem a área da dock")
+            text: Extras.I18n.t("dock_settings.reserve_space")
+            subtext: Extras.I18n.t("dock_settings.reserve_space_desc")
             checked: root.value("exclusive", true)
             onToggled: root.update("exclusive", checked)
         }
 
         // Aparência
         SectionHeader {
-            text: qsTr("Aparência")
+            text: Extras.I18n.t("dock_settings.appearance")
         }
 
         SliderRow {
             first: true
             icon: "opacity"
-            label: qsTr("Transparência")
+            label: Extras.I18n.t("dock_settings.transparency")
             valueLabel: Math.round(value * 100) + "%"
             value: root.value("opacity", 100) / 100
             onMoved: v => root.update("opacity", Math.round(v * 100))
@@ -113,8 +113,8 @@ PageBase {
 
         StepperRow {
             last: true
-            label: qsTr("Tamanho dos ícones")
-            subtext: qsTr("Tamanho dos ícones da dock em pixels")
+            label: Extras.I18n.t("dock_settings.icon_size")
+            subtext: Extras.I18n.t("dock_settings.icon_size_desc")
             value: root.value("elementSize", 44)
             from: 24
             to: 96
@@ -124,20 +124,20 @@ PageBase {
 
         // Animações
         SectionHeader {
-            text: qsTr("Animações")
+            text: Extras.I18n.t("dock_settings.animations")
         }
 
         ToggleRow {
             first: true
-            text: qsTr("Animações")
-            subtext: qsTr("Ativar transições de abertura, hover e escala")
+            text: Extras.I18n.t("dock_settings.animations")
+            subtext: Extras.I18n.t("dock_settings.animations_desc")
             checked: root.value("animations", true)
             onToggled: root.update("animations", checked)
         }
 
         SliderRow {
             icon: "animation"
-            label: qsTr("Intensidade do hover")
+            label: Extras.I18n.t("dock_settings.hover_intensity")
             valueLabel: Math.round(100 + value * 100) + "%"
             value: (root.value("hoverScale", 120) - 100) / 100
             onMoved: v => root.update("hoverScale", Math.round(100 + v * 100))
@@ -145,8 +145,8 @@ PageBase {
 
         ToggleRow {
             last: true
-            text: qsTr("Efeito cascata")
-            subtext: qsTr("Aumentar os ícones vizinhos conforme o cursor se aproxima")
+            text: Extras.I18n.t("dock_settings.cascade_effect")
+            subtext: Extras.I18n.t("dock_settings.cascade_effect_desc")
             checked: root.value("cascadeScale", true)
             onToggled: root.update("cascadeScale", checked)
         }

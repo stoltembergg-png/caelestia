@@ -12,6 +12,7 @@ import Caelestia.Config
 import qs.components
 import qs.components.controls
 import qs.services
+import qs.extras
 import qs.extras.whatsapp
 
 Item {
@@ -74,20 +75,20 @@ Item {
     function _label(): string {
         const k = root._kind;
         if (k === "image")
-            return "Foto";
+            return I18n.t("whatsapp.media.photo");
         if (k === "video")
-            return "Vídeo";
+            return I18n.t("whatsapp.media.video");
         if (k === "audio")
-            return "Áudio";
+            return I18n.t("whatsapp.media.audio");
         if (k === "document")
-            return "Documento";
+            return I18n.t("whatsapp.media.document");
         if (k === "sticker")
-            return "Figurinha";
+            return I18n.t("whatsapp.media.sticker");
         if (k === "location")
-            return "Localização";
+            return I18n.t("whatsapp.media.location");
         if (k === "contact")
-            return "Contato";
-        return "Mensagem";
+            return I18n.t("whatsapp.media.contact");
+        return I18n.t("whatsapp.message.message");
     }
 
     function _icon(): string {
@@ -296,7 +297,7 @@ Item {
 
             StyledText {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: "Falha ao enviar"
+                text: I18n.t("whatsapp.media.upload_failed")
                 color: Colours.palette.m3error
                 font: Tokens.font.label.small
             }
@@ -315,7 +316,7 @@ Item {
                         id: retryLabel
 
                         anchors.centerIn: parent
-                        text: "Tentar de novo"
+                        text: I18n.t("whatsapp.media.retry")
                         color: Colours.palette.m3onPrimary
                         font: Tokens.font.label.small
                     }
@@ -336,7 +337,7 @@ Item {
                         id: discardLabel
 
                         anchors.centerIn: parent
-                        text: "Descartar"
+                        text: I18n.t("whatsapp.media.discard")
                         color: Colours.palette.m3onSurface
                         font: Tokens.font.label.small
                     }
@@ -356,7 +357,7 @@ Item {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: -Tokens.spacing.medium
         visible: root._error
-        text: "Falha ao baixar · tentar de novo"
+        text: I18n.t("whatsapp.media.download_failed")
         color: Colours.palette.m3error
         font: Tokens.font.label.small
     }

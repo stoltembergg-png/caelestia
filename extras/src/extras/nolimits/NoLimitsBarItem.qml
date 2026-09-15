@@ -37,7 +37,6 @@ StyledRect {
     readonly property string displayMode: NoLimits.displayMode
 
     readonly property bool hasHandoffs: NoLimits.pendingHandoffs > 0
-    readonly property bool serverDown: NoLimits.memoryEnabled && !NoLimits.serverUp
 
     // Porte alinhado aos ícones de status nativos: Power/StatusIcons usam
     // Tokens.font.icon.small (~20px de caixa, glifo ~15px). Cada provedor tem
@@ -83,6 +82,8 @@ StyledRect {
                 vals.push(p.percentages.session);
             if (typeof p.percentages.weekly === "number")
                 vals.push(p.percentages.weekly);
+            if (typeof p.percentages.tertiary === "number")
+                vals.push(p.percentages.tertiary);
         }
         if (vals.length === 0)
             return null;
@@ -123,6 +124,8 @@ StyledRect {
             return "file://" + home + "/.local/share/icons/hicolor/scalable/apps/codex.svg";
         if (p === "opencodego")
             return "file://" + home + "/.local/share/icons/hicolor/512x512/apps/ai.opencode.desktop.png";
+        if (p === "commandcode")
+            return "file://" + home + "/.local/share/icons/hicolor/256x256/apps/commandcode.png";
         if (p === "cursor")
             return "file://" + home + "/.local/share/icons/hicolor/256x256/apps/co.anysphere.cursor.png";
         return "";
@@ -304,16 +307,4 @@ StyledRect {
         }
     }
 
-    // Ponto discreto de servidor de memória offline (canto inferior direito).
-    StyledRect {
-        visible: root.serverDown
-        anchors.bottom: parent.bottom
-        anchors.right: parent.right
-        anchors.bottomMargin: Tokens.padding.extraSmall
-        anchors.rightMargin: Tokens.padding.extraSmall
-        implicitWidth: root.dotSize
-        implicitHeight: root.dotSize
-        radius: width / 2
-        color: Colours.palette.m3error
-    }
 }

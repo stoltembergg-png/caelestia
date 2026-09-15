@@ -36,6 +36,7 @@
       "tutorial": "Tutorial",
       "update": "Atualizar",
       "about": "Sobre",
+      "autostart": "Início automático",
       "display_widgets": "Widgets",
       "display_general": "Geral",
       "osd": "Exibição na tela",
@@ -475,6 +476,49 @@
       }
     },
     "update_available": "Atualização disponível",
+    "autostart": {
+      "title": "Início automático",
+      "desc": "Gerencie programas, binários e scripts iniciados automaticamente ao iniciar a sessão",
+      "master_switch": {
+        "title": "Ativar início automático",
+        "desc": "Executa globalmente a lista configurada de aplicativos de inicialização ao iniciar a sessão"
+      },
+      "add_button": "Adicionar aplicativo",
+      "empty_title": "Nenhum aplicativo de inicialização",
+      "empty_desc": "Clique em 'adicionar aplicativo' para especificar comandos, binários, atrasos e contagens de repetição.",
+      "name_label": "Nome",
+      "name_placeholder": "ex.: Discord, EasyEffects, script",
+      "exec_label": "Comando executável",
+      "exec_placeholder": "Caminho para o binário ou nome com opções (ex.: discord --start-minimized)",
+      "browse_file": "Procurar arquivo",
+      "delay_label": "Atraso de inicialização",
+      "delay_desc": "Tempo de espera em segundos antes de iniciar",
+      "delay_unit": "s",
+      "count_label": "Número de execuções",
+      "count_desc": "Número de instâncias a executar na inicialização",
+      "repeat_delay_label": "Intervalo de repetição",
+      "repeat_delay_desc": "Atraso entre execuções repetidas",
+      "workspace_label": "Workspace",
+      "workspace_default": "Padrão",
+      "silent_label": "Início silencioso",
+      "silent_desc": "Abrir janela em segundo plano sem roubar o foco",
+      "condition_label": "Condição de inicialização",
+      "condition_always": "Sempre",
+      "condition_ac_only": "Somente com energia",
+      "condition_battery_only": "Somente com bateria",
+      "condition_multi_monitor": "Somente com vários monitores",
+      "restart_crash_label": "Reiniciar após falha",
+      "restart_crash_desc": "Reiniciar o serviço automaticamente em caso de erro",
+      "status_running": "Em execução",
+      "status_success": "Concluído",
+      "status_failed": "Erro",
+      "status_idle": "Inativo",
+      "view_log": "Registro",
+      "no_log": "O registro está vazio",
+      "run_now": "Executar agora",
+      "delete": "Excluir",
+      "toggle": "Ativar / desativar"
+    },
     "osd": {
       "capslock": {
         "title": "Exibir no Caps Lock"
@@ -781,6 +825,14 @@
         "pomo_skipped_focus_body": "Sessão de foco pulada. Indo para a pausa.",
         "pomo_skipped_break_body": "Pausa pulada. De volta ao foco."
       }
+    },
+    "notepad": {
+      "title": "Notas",
+      "new": "Nova",
+      "empty_list": "Nenhuma nota ainda.\nToque em Nova para criar uma.",
+      "untitled": "Nota sem título",
+      "tap_to_write": "Toque para escrever...",
+      "placeholder": "Escreva em markdown..."
     }
   },
   "screenshot": {
@@ -853,6 +905,8 @@
     "master_output_volume": "Volume principal de saída",
     "no_active_streams": "Nenhum fluxo ativo",
     "active_default": "Padrão ativo",
+    "virtual_output": "Saída virtual",
+    "virtual_input": "Entrada virtual",
       "analog": "Analógico",
       "internal_audio": "Áudio integrado",
     "tabs": {
@@ -1046,7 +1100,8 @@
       "monitors_detect": "Consulta saídas de vídeo ativas e taxas de atualização",
       "location_manual": "Define coordenadas e fuso manualmente",
       "blue_light_filter": "Ajusta temperatura de cor e ciclo dia/noite automático",
-      "translate": "Tradutor instantâneo de texto e seleção"
+      "translate": "Tradutor instantâneo de texto e seleção",
+      "minimize": "Minimiza janelas na dock (workspace especial) e restaura-as"
     }
   },
   "daemon": {
@@ -1179,6 +1234,16 @@
   },
   "datetime": {
     "full_date": "dddd, d 'de' MMMM"
+  },
+  "minimize": {
+    "error_hyprland_only": "Erro: minimizar só é compatível com o Hyprland.",
+    "error_no_window": "Erro: não há janela ativa para minimizar.",
+    "error_no_address": "Erro: nenhum endereço de janela informado para restaurar.",
+    "minimized_title": "Janela minimizada",
+    "restored_title": "Janela restaurada",
+    "help": "Uso: serpantinum minimize [[address]|restore <address>|list]",
+    "error_unknown_arg": "Erro: argumento desconhecido '{ARG}'.",
+    "error_already_minimized": "A janela já está minimizada. Restaure-a pela dock."
   }
 ,
   "kodexbar": {
@@ -1193,6 +1258,7 @@
   "open_handoffs": "Handoffs abertos",
   "recent": "Recentes",
   "no_pages": "Nenhuma página ainda",
+  "no_data": "Sem dados",
   "open_web": "Abrir web UI",
   "updated": "atualizado",
   "last_activity": "Última atividade:",

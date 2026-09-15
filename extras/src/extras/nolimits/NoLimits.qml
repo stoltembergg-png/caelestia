@@ -77,9 +77,10 @@ Singleton {
         return d === "unified" ? "alerts" : d;
     }
     readonly property var disabledList: nlc.disabled || []
+    readonly property var providerWhitelist: nlc.providers || ["opencodego", "codex", "commandcode"]
     readonly property var thresholds: nlc.thresholds || {}
 
-    readonly property bool memoryEnabled: memoryCfg.enabled !== false
+    readonly property bool memoryEnabled: false
     readonly property string endpoint: memoryCfg.endpoint || nlcDefaults.memory.endpoint
     readonly property string webPath: memoryCfg.webPath || nlcDefaults.memory.webPath
     readonly property string logoPath: memoryCfg.logoPath || nlcDefaults.memory.logoPath
@@ -141,7 +142,7 @@ Singleton {
 
     property bool visible: false
 
-    // view ∈ {"limits","memory","activity","settings"}
+    // view ∈ {"limits","activity","settings"}
     signal showRequested(string view)
 
     function show(view) {
@@ -187,6 +188,8 @@ Singleton {
             return "Ag";
         if (p === "opencodego")
             return "op";
+        if (p === "commandcode")
+            return "cc";
         if (p === "cursor")
             return "cu";
         return p.substring(0, 2);
@@ -221,7 +224,7 @@ Singleton {
 
         add(u.primary, "S");
         add(u.secondary, cursor ? "M" : "W");
-        add(u.tertiary, "T");
+        add(u.tertiary, providerId(entry.provider) === "commandcode" ? I18n.t("kodexbar.monthly") : "T");
 
         let extras = u.extraRateWindows;
         if (Array.isArray(extras)) {
@@ -253,6 +256,8 @@ Singleton {
             vals.push(u.primary.usedPercent);
         if (u.secondary && typeof u.secondary.usedPercent === "number")
             vals.push(u.secondary.usedPercent);
+        if (u.tertiary && typeof u.tertiary.usedPercent === "number")
+            vals.push(u.tertiary.usedPercent);
         if (vals.length === 0)
             return null;
         let worst = vals[0];
@@ -267,14 +272,19 @@ Singleton {
         let compact = [];
         for (let i = 0; i < entries.length; i++) {
             let e = entries[i];
+            let pid = providerId(e.provider);
+            if (providerWhitelist.length > 0 && providerWhitelist.indexOf(pid) === -1)
+                continue;
             built.push({ entry: e, rows: buildRows(e) });
             let u = e.usage || {};
             compact.push({
                 provider: providerId(e.provider),
                 label: providerLabel(e.provider),
+                displayName: e.displayName || providerName(e.provider),
                 percentages: {
                     session: (u.primary && typeof u.primary.usedPercent === "number") ? u.primary.usedPercent : null,
-                    weekly: (u.secondary && typeof u.secondary.usedPercent === "number") ? u.secondary.usedPercent : null
+                    weekly: (u.secondary && typeof u.secondary.usedPercent === "number") ? u.secondary.usedPercent : null,
+                    tertiary: (u.tertiary && typeof u.tertiary.usedPercent === "number") ? u.tertiary.usedPercent : null
                 },
                 severity: providerSeverity(e),
                 error: !!e.error,
@@ -504,6 +514,8 @@ Singleton {
             return "file://" + home + "/.local/share/icons/hicolor/scalable/apps/codex.svg";
         if (p === "opencodego")
             return "file://" + home + "/.local/share/icons/hicolor/512x512/apps/ai.opencode.desktop.png";
+        if (p === "commandcode")
+            return "file://" + home + "/.local/share/icons/hicolor/256x256/apps/commandcode.png";
         if (p === "cursor")
             return "file://" + home + "/.local/share/icons/hicolor/32x32/apps/co.anysphere.cursor.png";
         return "";
@@ -551,6 +563,8 @@ Singleton {
             return "Antigravity";
         if (p === "opencodego")
             return "OpenCode Go";
+        if (p === "commandcode")
+            return "Command Code";
         if (p === "cursor")
             return "Cursor";
         return id;
@@ -589,7 +603,7 @@ Singleton {
         if (now - last < notifyCooldownSecs * 1000)
             return;
         _notifyCooldowns[key] = now;
-        let view = (kind === "handoff" || kind === "server") ? "memory" : "limits";
+        let view = "limits";
         sendNotification("No Limits", text, view);
     }
 
@@ -887,7 +901,7 @@ Singleton {
 
     Process {
         id: quotaProc
-        command: ["bash", "-c", "kodexbar-quotas usage --format json --provider all"]
+        command: ["bash", "-c", "kodexbar-quotas-plus"]
         stdout: StdioCollector {
             id: quotaOut
             onStreamFinished: {

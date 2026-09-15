@@ -97,25 +97,25 @@ Item {
 
     CustomShortcut {
         name: "quickactions"
-        description: "Toggle quick actions panel"
+        description: I18n.t("shortcuts.quickactions")
         onPressed: root.toggleQuickActions()
     }
 
     CustomShortcut {
         name: "dock"
-        description: "Toggle dock"
+        description: I18n.t("shortcuts.dock")
         onPressed: root.toggleDock()
     }
 
     CustomShortcut {
         name: "nolimits"
-        description: "Toggle No Limits (KodexBar) panel"
+        description: I18n.t("shortcuts.nolimits")
         onPressed: root.toggleNoLimits()
     }
 
     CustomShortcut {
         name: "docksettings"
-        description: "Toggle dock settings window"
+        description: I18n.t("shortcuts.docksettings")
         onPressed: root.toggleDockSettings()
     }
 

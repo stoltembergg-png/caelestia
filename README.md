@@ -1,6 +1,6 @@
 # caelestia
 
-**A Linux desktop workspace for native tools, shell integrations, and reproducible setup.**
+**Um workspace de desktop Linux para ferramentas nativas, integrações de shell e configuração reproduzível.**
 
 [![Linux](https://img.shields.io/badge/Linux-111827?style=flat-square&logo=linux&logoColor=white)](https://www.linux.org/)
 [![Wayland](https://img.shields.io/badge/Wayland-111827?style=flat-square&logo=wayland&logoColor=white)](https://wayland.freedesktop.org/)
@@ -8,73 +8,73 @@
 [![QML](https://img.shields.io/badge/QML-111827?style=flat-square&logo=qt&logoColor=white)](https://doc.qt.io/qt-6/qmlapplications.html)
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-111827?style=flat-square)](LICENSE)
 
-`caelestia` brings together the working parts of a Linux desktop environment: a native WhatsApp integration, shell add-ons, a reproducible CachyOS setup, and focused personal layers on upstream projects.
+`caelestia` reúne as partes funcionais de um ambiente de desktop Linux: uma integração nativa com WhatsApp, complementos de shell, uma configuração reproduzível do CachyOS e camadas pessoais focadas sobre projetos upstream.
 
-## Start here
+## Comece aqui
 
-- [WhatsApp integration](whatsapp/README.md) — daemon, CLI, and Quickshell interface.
-- [Shell extras](extras/README.md) — Quick Actions, Dock, quota engine, and WhatsApp panel.
-- [CachyOS setup](setup/README.md) — package manifests and the guarded installer.
+- [Integração com WhatsApp](whatsapp/README.md) — daemon, CLI e interface Quickshell.
+- [Complementos de shell](extras/README.md) — Quick Actions, Dock, mecanismo de cota e painel do WhatsApp.
+- [Configuração do CachyOS](setup/README.md) — manifestos de pacotes e instalador protegido.
 
-## Directory map
+## Mapa de diretórios
 
-| Directory | Language / technology | Purpose |
+| Diretório | Linguagem / tecnologia | Finalidade |
 |---|---|---|
-| [`whatsapp/`](whatsapp/) | Go, QML, Quickshell, SQLite | Native WhatsApp for Caelestia, using a whatsmeow daemon and Unix domain socket. |
-| [`extras/`](extras/) | QML, Quickshell | Caelestia add-ons ported from Serpantinum. |
-| [`setup/`](setup/) | Shell, CachyOS, Hyprland | Reproducible setup with official and AUR package manifests. |
-| [`custom/serpantinum/`](custom/serpantinum/) | QML, unified diff | Personal layer over `ilyamiro/serpantinum`, with provenance and regeneration material. |
-| [`custom/shell/`](custom/shell/) | Git format-patch | Contribution patch series against `caelestia-dots/shell`. |
+| [`whatsapp/`](whatsapp/) | Go, QML, Quickshell, SQLite | WhatsApp nativo para Caelestia, usando um daemon whatsmeow e um socket de domínio Unix. |
+| [`extras/`](extras/) | QML, Quickshell | Complementos do Caelestia portados do Serpantinum. |
+| [`setup/`](setup/) | Shell, CachyOS, Hyprland | Configuração reproduzível com manifestos de pacotes oficiais e AUR. |
+| [`custom/serpantinum/`](custom/serpantinum/) | QML, unified diff | Camada pessoal sobre `ilyamiro/serpantinum`, com material de procedência e regeneração. |
+| [`custom/shell/`](custom/shell/) | Git format-patch | Série de patches de contribuição para `caelestia-dots/shell`. |
 
-## Workspace components
+## Componentes do workspace
 
 ### `whatsapp/`
 
-Caelestia-whatsapp provides a native WhatsApp integration: a Go whatsmeow daemon, the `cwctl` CLI, and a QML/Quickshell UI over a Unix domain socket. It uses systemd user services and SQLite storage, with no WebView, Chromium, or Electron.
+Caelestia-whatsapp fornece uma integração nativa com WhatsApp: um daemon Go whatsmeow, a CLI `cwctl` e uma UI QML/Quickshell sobre um socket de domínio Unix. Usa serviços de usuário do systemd e armazenamento SQLite, sem WebView, Chromium ou Electron.
 
-See the [WhatsApp README](whatsapp/README.md) for installation and usage.
+Consulte o [README do WhatsApp](whatsapp/README.md) para instalação e uso.
 
 ### `extras/`
 
-Caelestia-extras contains shell add-ons ported from Serpantinum: Quick Actions with Notepad and the whiteboard “Lousa”, a Dock, the No Limits quota engine from KodexBar, and a WhatsApp panel.
+Caelestia-extras contém complementos de shell portados do Serpantinum: Quick Actions com Notepad e o quadro branco “Lousa”, um Dock, o mecanismo de cota No Limits do KodexBar e um painel do WhatsApp.
 
-See the [extras README](extras/README.md) for installation and usage.
+Consulte o [README dos extras](extras/README.md) para instalação e uso.
 
 ### `setup/`
 
-This is the reproducible CachyOS + Hyprland + Caelestia setup. It contains official and AUR package manifests, plus a safe installer with `--dry-run` and `--restore` support and interactive privileged actions.
+Esta é a configuração reproduzível do CachyOS + Hyprland + Caelestia. Ela contém manifestos de pacotes oficiais e AUR, além de um instalador seguro com suporte a `--dry-run` e `--restore` e ações privilegiadas interativas.
 
-This subtree was private before entering the public monorepo. Review the scripts and planned changes before installing.
+Esta subárvore era privada antes de entrar no monorepo público. Revise os scripts e as mudanças planejadas antes de instalar.
 
-See the [setup README](setup/README.md) for installation details.
+Consulte o [README da configuração](setup/README.md) para obter detalhes da instalação.
 
-## Integration model
+## Modelo de integração
 
-- **Shell UI:** Quickshell and QML provide the desktop-facing interfaces and add-ons.
-- **WhatsApp service:** the Go daemon handles WhatsApp through whatsmeow; the CLI and UI use its Unix domain socket.
-- **System setup:** CachyOS and Hyprland are described by package manifests and a guarded installer.
-- **Personal changes:** upstream differences are kept as changed files or an explicit format-patch series rather than a separate hidden fork.
+- **UI do shell:** Quickshell e QML fornecem as interfaces voltadas ao desktop e os complementos.
+- **Serviço do WhatsApp:** o daemon Go gerencia o WhatsApp por meio do whatsmeow; a CLI e a UI usam seu socket de domínio Unix.
+- **Configuração do sistema:** CachyOS e Hyprland são descritos por manifestos de pacotes e um instalador protegido.
+- **Mudanças pessoais:** as diferenças em relação ao upstream são mantidas como arquivos modificados ou uma série explícita de format-patch, em vez de um fork oculto separado.
 
-## History and provenance
+## Histórico e procedência
 
-The `whatsapp/`, `extras/`, and `setup/` directories retain the full subtree history of their original repositories.
+Os diretórios `whatsapp/`, `extras/` e `setup/` preservam o histórico completo das subárvores de seus repositórios originais.
 
-The custom directories document their relationship to upstream rather than presenting the layers as independent projects. Use the included `UPSTREAM.md` files to understand provenance and regenerate the tracked changes.
+Os diretórios custom documentam sua relação com o upstream, em vez de apresentar as camadas como projetos independentes. Use os arquivos `UPSTREAM.md` incluídos para entender a procedência e regenerar as mudanças rastreadas.
 
-## Personal layers vs upstream
+## Camadas pessoais vs. upstream
 
-The `custom/` directory separates personal changes from the upstream projects they extend:
+O diretório `custom/` separa as mudanças pessoais dos projetos upstream que elas estendem:
 
-- **[`custom/serpantinum/`](custom/serpantinum/)** contains only files changed against the merge-base of [`ilyamiro/serpantinum`](https://github.com/ilyamiro/serpantinum), plus `serpantinum-custom.patch` and `UPSTREAM.md`. The patch records the complete unified diff and `UPSTREAM.md` explains provenance and regeneration.
-- **[`custom/shell/`](custom/shell/)** contains a format-patch series for contribution branches against [`caelestia-dots/shell`](https://github.com/caelestia-dots/shell), covering bar audio popout width, dashboard weather wrapping, and localized PAM errors in the lock screen. It also includes PR evidence and `UPSTREAM.md`.
+- **[`custom/serpantinum/`](custom/serpantinum/)** contém apenas arquivos modificados em relação ao merge-base de [`ilyamiro/serpantinum`](https://github.com/ilyamiro/serpantinum), além de `serpantinum-custom.patch` e `UPSTREAM.md`. O patch registra o unified diff completo e `UPSTREAM.md` explica a procedência e a regeneração.
+- **[`custom/shell/`](custom/shell/)** contém uma série de format-patch para branches de contribuição sobre [`caelestia-dots/shell`](https://github.com/caelestia-dots/shell), abrangendo a largura do popout de áudio da barra, a quebra do clima no dashboard e erros PAM localizados na tela de bloqueio. Também inclui evidências de PR e `UPSTREAM.md`.
 
-The root repository is licensed under [AGPL-3.0](LICENSE). The Serpantinum material is based on AGPL-3.0 upstream; the shell patch series targets GPL-3.0 upstream. These upstream licensing terms and provenance remain part of the context when the combined workspace is used or redistributed.
+O repositório raiz é licenciado sob [AGPL-3.0](LICENSE). O material do Serpantinum é baseado no upstream AGPL-3.0; a série de patches do shell tem como alvo um upstream GPL-3.0. Esses termos de licença e a procedência do upstream continuam fazendo parte do contexto quando o workspace combinado é usado ou redistribuído.
 
-## Upstream projects
+## Projetos upstream
 
-- [`caelestia-dots/shell`](https://github.com/caelestia-dots/shell) — the GPL-3.0 shell receiving the contribution patch series.
-- [`ilyamiro/serpantinum`](https://github.com/ilyamiro/serpantinum) — the AGPL-3.0 shell used as the base for the personal layer.
+- [`caelestia-dots/shell`](https://github.com/caelestia-dots/shell) — o shell GPL-3.0 que recebe a série de patches de contribuição.
+- [`ilyamiro/serpantinum`](https://github.com/ilyamiro/serpantinum) — o shell AGPL-3.0 usado como base da camada pessoal.
 
-## License
+## Licença
 
-The monorepo root is [AGPL-3.0](LICENSE). Refer to the included `UPSTREAM.md` files and upstream repositories for provenance and the applicable upstream terms.
+A raiz do monorepo está sob [AGPL-3.0](LICENSE). Consulte os arquivos `UPSTREAM.md` incluídos e os repositórios upstream para conhecer a procedência e os termos upstream aplicáveis.

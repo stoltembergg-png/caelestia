@@ -49,7 +49,18 @@
       "untitled": "Untitled note",
       "tap_to_write": "Tap to write...",
       "placeholder": "Write in markdown..."
+    },
+    "draw": {
+      "default_palette": "Default",
+      "palette": "Palette",
+      "saved": "Drawing saved"
     }
+  },
+  "shortcuts": {
+    "quickactions": "Toggle quick actions panel",
+    "dock": "Toggle dock",
+    "nolimits": "Toggle No Limits (KodexBar) panel",
+    "docksettings": "Toggle dock settings window"
   },
   "guide": {
     "dock": {
@@ -133,6 +144,30 @@
       }
     }
   },
+  "dock_settings": {
+    "title": "Dock",
+    "window_title": "Dock settings",
+    "behavior": "Behavior",
+    "always_visible": "Always visible",
+    "always_visible_desc": "Keep the dock visible even without pinned apps",
+    "autohide": "Auto-hide",
+    "autohide_desc": "Hide the dock when the cursor is away from it",
+    "autohide_delay": "Hide delay",
+    "autohide_delay_desc": "Time in milliseconds before hiding the dock",
+    "fullscreen_hide": "Hide in fullscreen",
+    "fullscreen_hide_desc": "Hide the dock when a window is fullscreen",
+    "reserve_space": "Reserve space",
+    "reserve_space_desc": "Prevent windows from occupying the dock area",
+    "appearance": "Appearance",
+    "transparency": "Transparency",
+    "icon_size": "Icon size",
+    "icon_size_desc": "Size of dock icons in pixels",
+    "animations": "Animations",
+    "animations_desc": "Enable opening, hover, and scale transitions",
+    "hover_intensity": "Hover intensity",
+    "cascade_effect": "Cascade effect",
+    "cascade_effect_desc": "Enlarge neighboring icons as the cursor approaches"
+  },
   "kodexbar": {
     "limits": "Limits",
     "memory": "Memory",
@@ -145,6 +180,8 @@
     "open_handoffs": "Open handoffs",
     "recent": "Recent",
     "no_pages": "No pages yet",
+    "no_data": "No data",
+    "monthly": "Monthly",
     "open_web": "Open web UI",
     "updated": "updated",
     "last_activity": "Last activity:",
@@ -199,5 +236,118 @@
     "memory_save": "Save",
     "memory_saved": "saved",
     "running": "running"
+  },
+  "whatsapp": {
+    "login": {
+      "title": "Pair your WhatsApp",
+      "instructions": "Open WhatsApp on your phone, tap Linked devices, and point the camera at the code.",
+      "generating": "Generating code…",
+      "connect_device": "Connect device",
+      "new_code": "Generate new code"
+    },
+    "chat_list": {
+      "now": "now",
+      "minutes": "{n} min",
+      "yesterday": "yesterday",
+      "empty_preview": "—",
+      "empty_logged_in": "No conversations yet",
+      "empty_logged_out": "Connect a device to get started",
+      "weekdays": {
+        "sun": "Sun",
+        "mon": "Mon",
+        "tue": "Tue",
+        "wed": "Wed",
+        "thu": "Thu",
+        "fri": "Fri",
+        "sat": "Sat"
+      }
+    },
+    "chat_view": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "empty": "No messages"
+    },
+    "message": {
+      "deleted": "Message deleted",
+      "you": "You",
+      "quoted": "Quoted message",
+      "edited": "edited",
+      "message": "Message"
+    },
+    "composer": {
+      "read_file_failed": "Could not read the file",
+      "file_too_large": "File larger than 100 MB",
+      "unsupported_file": "Unsupported file type",
+      "file_title": "Send file",
+      "attachment": "Attachment",
+      "caption_placeholder": "Add a caption…",
+      "reply_placeholder": "Reply…",
+      "message_placeholder": "Message"
+    },
+    "context_menu": {
+      "reply": "Reply",
+      "open_system": "Open in system"
+    },
+    "media": {
+      "photo": "Photo",
+      "video": "Video",
+      "audio": "Audio",
+      "document": "Document",
+      "sticker": "Sticker",
+      "location": "Location",
+      "contact": "Contact",
+      "reaction": "Reaction",
+      "upload_failed": "Failed to send",
+      "retry": "Try again",
+      "discard": "Discard",
+      "download_failed": "Failed to download · try again"
+    },
+    "settings": {
+      "title": "WhatsApp",
+      "connected": "Connected",
+      "connecting": "Connecting…",
+      "not_paired": "Not paired",
+      "offline": "Offline",
+      "status": "Status",
+      "connection": "Connection",
+      "account": "Account",
+      "no_account": "—",
+      "unread": "Unread messages",
+      "actions": "Actions",
+      "connect_qr": "Connect with QR code",
+      "connect_qr_hint": "Generate a new pairing code",
+      "open_panel": "Open panel",
+      "open_panel_hint": "Show the WhatsApp drawer",
+      "confirm_logout": "Confirm logout",
+      "logout": "Log out",
+      "confirm_logout_hint": "Tap again to disconnect",
+      "unlink_device": "Unlink this device",
+      "preferences": "Preferences",
+      "notifications": "Notifications",
+      "notifications_desc": "Notify about new received messages",
+      "open_on_hover": "Open on hover",
+      "open_on_hover_desc": "Open the panel when the cursor approaches the bar edge",
+      "compact_mode": "Compact mode",
+      "compact_mode_desc": "Lower density in the list and conversations"
+    },
+    "notifications": {
+      "new_message": "New message",
+      "open": "Open"
+    },
+    "shortcuts": {
+      "toggle_drawer": "Toggle WhatsApp drawer"
+    },
+    "client": {
+      "qr_timeout": "Timed out generating the code; try again",
+      "auth_error": "Authentication error",
+      "group": "Group",
+      "contact_number": "Contact {n}",
+      "contact": "Contact",
+      "unknown": "Something went wrong",
+      "send_failed": "Failed to send",
+      "timeout": "Request timed out",
+      "disconnected": "Connection lost",
+      "pairing_failed": "Failed to start pairing"
+    }
   }
 }

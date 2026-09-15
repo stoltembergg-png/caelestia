@@ -14,6 +14,7 @@ import Caelestia.Config
 import qs.components
 import qs.components.controls
 import qs.services
+import qs.extras
 import qs.extras.whatsapp
 
 ColumnLayout {
@@ -116,15 +117,15 @@ ColumnLayout {
         const mime = String(lines[1] || "application/octet-stream").trim().toLowerCase();
         const kind = root._kindForMime(mime);
         if (!(size > 0)) {
-            root.stagedError = "Não foi possível ler o arquivo";
+            root.stagedError = I18n.t("whatsapp.composer.read_file_failed");
             return;
         }
         if (size > 100 * 1024 * 1024) {
-            root.stagedError = "Arquivo maior que 100 MB";
+            root.stagedError = I18n.t("whatsapp.composer.file_too_large");
             return;
         }
         if (!kind.length) {
-            root.stagedError = "Tipo de arquivo não suportado";
+            root.stagedError = I18n.t("whatsapp.composer.unsupported_file");
             return;
         }
         root.stagedPath = root._probeCandidate;
@@ -178,7 +179,7 @@ ColumnLayout {
     Process {
         id: picker
 
-        command: ["zenity", "--file-selection", "--title=Enviar arquivo"]
+        command: ["zenity", "--file-selection", "--title=" + I18n.t("whatsapp.composer.file_title")]
         stdout: StdioCollector {
             onStreamFinished: {
                 const p = text.trim();
@@ -206,7 +207,7 @@ ColumnLayout {
     FileDialog {
         id: fallbackDialog
 
-        title: "Enviar arquivo"
+        title: I18n.t("whatsapp.composer.file_title")
         fileMode: FileDialog.OpenFile
         onAccepted: root.stageUrl(selectedFile)
     }
@@ -241,7 +242,7 @@ ColumnLayout {
 
             StyledText {
                 width: parent.width
-                text: WhatsAppClient.replyToFromMe ? "Você" : WhatsAppClient.replyToName
+                text: WhatsAppClient.replyToFromMe ? I18n.t("whatsapp.message.you") : WhatsAppClient.replyToName
                 color: Colours.palette.m3primary
                 font: Tokens.font.label.small
                 elide: Text.ElideRight
@@ -250,7 +251,7 @@ ColumnLayout {
 
             StyledText {
                 width: parent.width
-                text: WhatsAppClient.replyToText.length > 0 ? WhatsAppClient.replyToText : "Mensagem citada"
+                text: WhatsAppClient.replyToText.length > 0 ? WhatsAppClient.replyToText : I18n.t("whatsapp.message.quoted")
                 color: Colours.palette.m3onSurfaceVariant
                 font: Tokens.font.body.small
                 elide: Text.ElideRight
@@ -321,7 +322,7 @@ ColumnLayout {
 
                 StyledText {
                     Layout.fillWidth: true
-                    text: root.staged ? root.stagedName : "Anexo"
+                    text: root.staged ? root.stagedName : I18n.t("whatsapp.composer.attachment")
                     color: Colours.palette.m3onSurface
                     font: Tokens.font.body.small
                     elide: Text.ElideMiddle
@@ -399,7 +400,7 @@ ColumnLayout {
                 StyledText {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
-                    text: root.staged ? "Adicione uma legenda…" : (WhatsAppClient.replyToId.length > 0 ? "Responder…" : "Mensagem")
+                    text: root.staged ? I18n.t("whatsapp.composer.caption_placeholder") : (WhatsAppClient.replyToId.length > 0 ? I18n.t("whatsapp.composer.reply_placeholder") : I18n.t("whatsapp.composer.message_placeholder"))
                     color: Colours.palette.m3onSurfaceVariant
                     font: input.font
                     opacity: input.text.length > 0 ? 0 : 1

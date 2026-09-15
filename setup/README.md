@@ -1,27 +1,27 @@
-# CachyOS Caelestia Setup
+# Configuração do CachyOS Caelestia
 
-Portable setup manifests and documentation for a CachyOS/Arch desktop using a
-Hyprland session and Caelestia. Review manifests before installing; package
-availability, especially in the AUR, must be checked at install time.
+Manifestos de configuração portáveis e documentação para um desktop CachyOS/Arch
+usando uma sessão Hyprland e Caelestia. Revise os manifestos antes de instalar;
+a disponibilidade dos pacotes, especialmente no AUR, deve ser verificada no momento da instalação.
 
-This repository does not contain credentials, personal media, host binaries,
-wallpapers, firmware settings, BIOS or Secure Boot changes. Privileged actions
-remain interactive in Kitty or another visible terminal; passwords are never
-accepted by the project.
+Este repositório não contém credenciais, mídia pessoal, binários do host,
+wallpapers, configurações de firmware, BIOS ou mudanças de Secure Boot. As ações
+privilegiadas continuam interativas no Kitty ou em outro terminal visível; o projeto
+nunca aceita senhas.
 
-See [component attribution](docs/COMPONENTS.md) and [hardware assumptions](docs/HARDWARE.md).
+Consulte a [atribuição dos componentes](docs/COMPONENTS.md) e as [premissas de hardware](docs/HARDWARE.md).
 
-## Installation
+## Instalação
 
-This repository is private, so the installer is fetched with an authenticated
-`gh` session (or a `GH_TOKEN` with read access to the repo):
+Este repositório é privado, portanto o instalador é obtido com uma sessão `gh`
+autenticada (ou um `GH_TOKEN` com acesso de leitura ao repositório):
 
 ```bash
 # one-liner: clone to a temp dir and run the installer
 bash -c 'tmp=$(mktemp -d) && gh repo clone stoltembergg-png/cachyos-caelestia-setup "$tmp" && bash "$tmp/install.sh"'
 ```
 
-Or clone it first and review the plan before running:
+Ou clone-o primeiro e revise o plano antes de executar:
 
 ```bash
 gh repo clone stoltembergg-png/cachyos-caelestia-setup
@@ -30,4 +30,4 @@ cd cachyos-caelestia-setup
 ./install.sh
 ```
 
-Run `./install.sh --help` for all options (`--dry-run`, `--yes`, `--restore`, `--skip-monitor`).
+Execute `./install.sh --help` para ver todas as opções (`--dry-run`, `--yes`, `--restore`, `--skip-monitor`).

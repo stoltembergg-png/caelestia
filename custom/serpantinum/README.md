@@ -1,15 +1,15 @@
 > [!IMPORTANT]
-> **Private custom build.** This fork adds personal features (No Limits monitor, WhatsApp panel, Notes, KodexBar widgets) on top of upstream Serpantinum.
-> Install (requires an authenticated `gh`; private repo):
+> **Build customizado privado.** Este fork adiciona recursos pessoais (monitor No Limits, painel do WhatsApp, Notes, widgets do KodexBar) sobre o Serpantinum upstream.
+> Instalação (requer um `gh` autenticado; repositório privado):
 >
 > ```bash
 > bash -c 'tmp=$(mktemp -d) && gh repo clone stoltembergg-png/serpantinum-custom "$tmp" && bash "$tmp/install/local-deploy.sh"'
 > ```
 >
-> The script does a clean deploy to `~/.local/share/serpantinum`, refreshes the `~/.local/bin` symlinks and restarts the daemon.
-> Dependencies (Hyprland session, Quickshell build) come from `stoltembergg-png/cachyos-caelestia-setup`.
+> O script faz uma implantação limpa em `~/.local/share/serpantinum`, atualiza os links simbólicos de `~/.local/bin` e reinicia o daemon.
+> As dependências (sessão Hyprland, build do Quickshell) vêm de `stoltembergg-png/cachyos-caelestia-setup`.
 >
-> To update: `cd` into a checkout, `git merge upstream/master`, then run `./install/local-deploy.sh`.
+> Para atualizar: use `cd` em um checkout, execute `git merge upstream/master` e depois `./install/local-deploy.sh`.
 
 <div align="center">
   <a href="https://ko-fi.com/ilyamiro">
@@ -21,23 +21,23 @@
   <img src="docs/assets/banner.png" alt="Serpantinum" width="850" />
 </div>
 
-## Previews
+## Pré-visualizações
 
 | | |
 |---|---|
-| ![Preview 1](docs/assets/previews/preview_1.png) | ![Preview 2](docs/assets/previews/preview_2.png) |
-| ![Preview 3](docs/assets/previews/preview_3.png) | ![Preview 4](docs/assets/previews/preview_4.png) |
+| ![Prévia 1](docs/assets/previews/preview_1.png) | ![Prévia 2](docs/assets/previews/preview_2.png) |
+| ![Prévia 3](docs/assets/previews/preview_3.png) | ![Prévia 4](docs/assets/previews/preview_4.png) |
 
 ---
 
-## Installation
+## Instalação
 
 > [!IMPORTANT]
-> **Migrating from v1:** All previous configuration will be backed up and unused. Configuration of compositor settings such as monitors, keybinds, and autostart is now up to you, as the project migrated from being dotfiles to being a shell.
+> **Migração da v1:** Toda a configuração anterior será armazenada em backup e deixará de ser usada. A configuração de opções do compositor, como monitores, atalhos de teclado e inicialização automática, agora é responsabilidade sua, pois o projeto migrou de dotfiles para um shell.
 
-### Arch Linux and its derivatives
+### Arch Linux e seus derivados
 
-For Arch-based distributions (including systemd, OpenRC, and other init systems), run the automated installation script.:
+Para distribuições baseadas em Arch (incluindo systemd, OpenRC e outros sistemas de inicialização), execute o script de instalação automatizada:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/ilyamiro/serpantinum/master/install/install.sh)"
@@ -45,17 +45,17 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/ilyamiro/serpantinum/mas
 ```
 
 > [!NOTE]
-> To update, when or if you recieve a notification about the new version being available, just run the script again and choose "update"
+> Para atualizar, quando receber uma notificação de que uma nova versão está disponível, execute o script novamente e escolha “update”.
 
 ---
 
 ### NixOS
 
-Serpantinum provides flake outputs, a NixOS module for system dependencies, and a Home Manager module for user configuration and service management.
+Serpantinum fornece outputs de flake, um módulo NixOS para dependências do sistema e um módulo Home Manager para configuração do usuário e gerenciamento de serviços.
 
-#### 1. Add Flake Input
+#### 1. Adicione a entrada do Flake
 
-Add Serpantinum to your `flake.nix`:
+Adicione o Serpantinum ao seu `flake.nix`:
 
 ```nix
 {
@@ -80,7 +80,7 @@ Add Serpantinum to your `flake.nix`:
 
 #### 2. configuration.nix
 
-Enable the NixOS module to configure system prerequisites:
+Habilite o módulo NixOS para configurar os pré-requisitos do sistema:
 
 ```nix
 {
@@ -89,7 +89,7 @@ Enable the NixOS module to configure system prerequisites:
 
 ```
 
-If you prefer installing the package directly without the system module:
+Se preferir instalar o pacote diretamente, sem o módulo do sistema:
 
 ```nix
 { pkgs, serpantinum, ... }:
@@ -102,7 +102,7 @@ If you prefer installing the package directly without the system module:
 
 ```
 
-#### 3. Home Manager Configuration
+#### 3. Configuração do Home Manager
 
 ```nix
 { serpantinum, ... }:
@@ -154,9 +154,9 @@ If you prefer installing the package directly without the system module:
 
 ```
 
-#### 4. Updating
+#### 4. Atualização
 
-Update the flake lockfile and rebuild your system:
+Atualize o lockfile do flake e recompile o sistema:
 
 ```bash
 nix flake update serpantinum
@@ -164,15 +164,15 @@ sudo nixos-rebuild switch --flake .
 
 ```
 
-> **Note:** The automatic installer handles compositor integration on standard distributions. On NixOS / Home Manager, you must manually integrate compositor configs.
-> Sample configs, autostart entries, and keybindings for supported window managers and compositors are available in the [compositors](https://github.com/ilyamiro/serpantinum/tree/master/compositors) directory.
+> **Nota:** O instalador automático gerencia a integração com o compositor em distribuições padrão. No NixOS / Home Manager, você deve integrar manualmente as configurações do compositor.
+> Exemplos de configurações, entradas de inicialização automática e atalhos de teclado para gerenciadores de janelas e compositores compatíveis estão disponíveis no diretório [compositors](https://github.com/ilyamiro/serpantinum/tree/master/compositors).
 
 
-#### Required autostart
+#### Inicialização automática obrigatória
 
-Remember to add clipboard listeners and required services to your compositor's autostart configuration for the clipboard and the equalizer to work properly.
+Lembre-se de adicionar os listeners da área de transferência e os serviços necessários à configuração de inicialização automática do compositor para que a área de transferência e o equalizador funcionem corretamente.
 
-Example on Hyprland:
+Exemplo no Hyprland:
 
 ```lua
 hl.on("hyprland.start", function()
@@ -184,21 +184,20 @@ end)
 ```
 ---
 
-## Running
+## Execução
 
-To run the shell, launch `serpantinumd start`
-
----
-
-## Credits
-
-* Special thanks to Darkall44/Qylock for providing a gorgeous material SDDM theme!
+Para executar o shell, inicie `serpantinumd start`
 
 ---
 
-## License
+## Créditos
+
+* Agradecimentos especiais a Darkall44/Qylock por fornecer um belo tema material para SDDM!
+
+---
+
+## Licença
 
 Copyright (C) 2026 Illia Miroshnichenko
 
-This project is licensed under the GNU Affero General Public License version 3, or (at your option) any later version. See the [LICENSE.md](LICENSE.md) file for the full license text.
-
+Este projeto é licenciado sob a GNU Affero General Public License versão 3 ou, a seu critério, qualquer versão posterior. Consulte o arquivo [LICENSE.md](LICENSE.md) para obter o texto completo da licença.

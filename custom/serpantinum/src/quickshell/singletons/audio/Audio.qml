@@ -163,7 +163,7 @@ Singleton {
         // For virtual nodes (easyeffects, etc.) show a clean type instead of internal name
         const nodeName = node.name || "";
         if (nodeName.startsWith("easyeffects_")) {
-            return nodeName.includes("sink") ? "Saída virtual" : "Entrada virtual";
+            return nodeName.includes("sink") ? I18n.t("volumepopup.virtual_output") : I18n.t("volumepopup.virtual_input");
         }
         if (nodeName.startsWith("pipewire_")) {
             return "Virtual";
