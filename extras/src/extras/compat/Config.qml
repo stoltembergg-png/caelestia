@@ -56,7 +56,8 @@ Item {
             },
             "general": {
                 "uiScale": 1.0,
-                "language": "en"
+                // Vazio = seguir o locale do sistema (mesmo comportamento do core Caelestia).
+                "language": ""
             },
             "display": {
                 "monitors": {}

@@ -1,6 +1,6 @@
 // Portado de Serpantinum: src/quickshell/singletons/system/I18n.qml (AGPL-3.0)
 // Shim: t(key, args) lê assets/languages/{lang}.json via FileView.
-// lang vem de Config.getSetting("general").language (default "en"),
+// lang vem de Config.getSetting("general").language (vazio = locale do sistema),
 // normalizado para 2 letras; só en/pt são suportados (senão cai em en).
 // Fallback: en.json e, por fim, a última parte da chave (legível).
 
@@ -17,6 +17,9 @@ Item {
     readonly property string languagesDir: Caching.serpantinumDir + "/assets/languages"
     readonly property var supportedLanguages: ["en", "pt"]
 
+    // NOTE: must stay "en" (the initial path of langFile below is en.json).
+    // If this initialized to the system locale directly, applyLanguage() would
+    // early-return (lang === currentLang) and never load the localized JSON.
     property string currentLang: "en"
     property var translations: ({})
     property var fallbackTranslations: ({})
@@ -25,15 +28,18 @@ Item {
     signal languageChanged()
 
     function normalizeLang(rawLang) {
-        if (!rawLang || typeof rawLang !== "string")
+        let language = rawLang;
+        if (typeof rawLang !== "string" || rawLang.trim() === "")
+            language = Qt.locale().name;
+        if (!language || typeof language !== "string")
             return "en";
-        let lang = rawLang.toLowerCase().replace("-", "_").split("_")[0];
+        let lang = language.toLowerCase().split(/[_-]/)[0];
         return root.supportedLanguages.indexOf(lang) !== -1 ? lang : "en";
     }
 
     function applyLanguage() {
         const general = Config.getSetting("general", ({}));
-        const lang = normalizeLang(general ? general.language : "en");
+        const lang = normalizeLang(general ? general.language : "");
         if (lang === root.currentLang)
             return;
         root.currentLang = lang;
