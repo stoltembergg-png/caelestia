@@ -37,7 +37,6 @@ StyledRect {
     readonly property string displayMode: NoLimits.displayMode
 
     readonly property bool hasHandoffs: NoLimits.pendingHandoffs > 0
-    readonly property bool serverDown: NoLimits.memoryEnabled && !NoLimits.serverUp
 
     // Porte alinhado aos ícones de status nativos: Power/StatusIcons usam
     // Tokens.font.icon.small (~20px de caixa, glifo ~15px). Cada provedor tem
@@ -308,16 +307,4 @@ StyledRect {
         }
     }
 
-    // Ponto discreto de servidor de memória offline (canto inferior direito).
-    StyledRect {
-        visible: root.serverDown
-        anchors.bottom: parent.bottom
-        anchors.right: parent.right
-        anchors.bottomMargin: Tokens.padding.extraSmall
-        anchors.rightMargin: Tokens.padding.extraSmall
-        implicitWidth: root.dotSize
-        implicitHeight: root.dotSize
-        radius: width / 2
-        color: Colours.palette.m3error
-    }
 }

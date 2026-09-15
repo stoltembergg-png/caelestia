@@ -77,9 +77,10 @@ Singleton {
         return d === "unified" ? "alerts" : d;
     }
     readonly property var disabledList: nlc.disabled || []
+    readonly property var providerWhitelist: nlc.providers || ["opencodego", "codex", "commandcode"]
     readonly property var thresholds: nlc.thresholds || {}
 
-    readonly property bool memoryEnabled: memoryCfg.enabled !== false
+    readonly property bool memoryEnabled: false
     readonly property string endpoint: memoryCfg.endpoint || nlcDefaults.memory.endpoint
     readonly property string webPath: memoryCfg.webPath || nlcDefaults.memory.webPath
     readonly property string logoPath: memoryCfg.logoPath || nlcDefaults.memory.logoPath
@@ -141,7 +142,7 @@ Singleton {
 
     property bool visible: false
 
-    // view ∈ {"limits","memory","activity","settings"}
+    // view ∈ {"limits","activity","settings"}
     signal showRequested(string view)
 
     function show(view) {
@@ -271,6 +272,9 @@ Singleton {
         let compact = [];
         for (let i = 0; i < entries.length; i++) {
             let e = entries[i];
+            let pid = providerId(e.provider);
+            if (providerWhitelist.length > 0 && providerWhitelist.indexOf(pid) === -1)
+                continue;
             built.push({ entry: e, rows: buildRows(e) });
             let u = e.usage || {};
             compact.push({
@@ -599,7 +603,7 @@ Singleton {
         if (now - last < notifyCooldownSecs * 1000)
             return;
         _notifyCooldowns[key] = now;
-        let view = (kind === "handoff" || kind === "server") ? "memory" : "limits";
+        let view = (kind === "handoff" || kind === "server") ? "activity" : "limits";
         sendNotification("No Limits", text, view);
     }
 
