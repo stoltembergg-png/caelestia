@@ -647,7 +647,7 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             visible: !NoLimits.quotaLoading && NoLimits.cards.length === 0 && !NoLimits.quotaError
-                            text: "Sem dados"
+                            text: I18n.t("kodexbar.no_data")
                             font.family: ThemeBackend.fontFamily
                             font.pixelSize: window.s(11)
                             color: ThemeBackend.overlay2
