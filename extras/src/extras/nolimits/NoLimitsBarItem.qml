@@ -83,6 +83,8 @@ StyledRect {
                 vals.push(p.percentages.session);
             if (typeof p.percentages.weekly === "number")
                 vals.push(p.percentages.weekly);
+            if (typeof p.percentages.tertiary === "number")
+                vals.push(p.percentages.tertiary);
         }
         if (vals.length === 0)
             return null;
@@ -123,6 +125,8 @@ StyledRect {
             return "file://" + home + "/.local/share/icons/hicolor/scalable/apps/codex.svg";
         if (p === "opencodego")
             return "file://" + home + "/.local/share/icons/hicolor/512x512/apps/ai.opencode.desktop.png";
+        if (p === "commandcode")
+            return "file://" + home + "/.local/share/icons/hicolor/256x256/apps/commandcode.png";
         if (p === "cursor")
             return "file://" + home + "/.local/share/icons/hicolor/256x256/apps/co.anysphere.cursor.png";
         return "";

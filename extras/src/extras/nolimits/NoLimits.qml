@@ -187,6 +187,8 @@ Singleton {
             return "Ag";
         if (p === "opencodego")
             return "op";
+        if (p === "commandcode")
+            return "cc";
         if (p === "cursor")
             return "cu";
         return p.substring(0, 2);
@@ -221,7 +223,7 @@ Singleton {
 
         add(u.primary, "S");
         add(u.secondary, cursor ? "M" : "W");
-        add(u.tertiary, "T");
+        add(u.tertiary, providerId(entry.provider) === "commandcode" ? "Monthly" : "T");
 
         let extras = u.extraRateWindows;
         if (Array.isArray(extras)) {
@@ -253,6 +255,8 @@ Singleton {
             vals.push(u.primary.usedPercent);
         if (u.secondary && typeof u.secondary.usedPercent === "number")
             vals.push(u.secondary.usedPercent);
+        if (u.tertiary && typeof u.tertiary.usedPercent === "number")
+            vals.push(u.tertiary.usedPercent);
         if (vals.length === 0)
             return null;
         let worst = vals[0];
@@ -272,9 +276,11 @@ Singleton {
             compact.push({
                 provider: providerId(e.provider),
                 label: providerLabel(e.provider),
+                displayName: e.displayName || providerName(e.provider),
                 percentages: {
                     session: (u.primary && typeof u.primary.usedPercent === "number") ? u.primary.usedPercent : null,
-                    weekly: (u.secondary && typeof u.secondary.usedPercent === "number") ? u.secondary.usedPercent : null
+                    weekly: (u.secondary && typeof u.secondary.usedPercent === "number") ? u.secondary.usedPercent : null,
+                    tertiary: (u.tertiary && typeof u.tertiary.usedPercent === "number") ? u.tertiary.usedPercent : null
                 },
                 severity: providerSeverity(e),
                 error: !!e.error,
@@ -504,6 +510,8 @@ Singleton {
             return "file://" + home + "/.local/share/icons/hicolor/scalable/apps/codex.svg";
         if (p === "opencodego")
             return "file://" + home + "/.local/share/icons/hicolor/512x512/apps/ai.opencode.desktop.png";
+        if (p === "commandcode")
+            return "file://" + home + "/.local/share/icons/hicolor/256x256/apps/commandcode.png";
         if (p === "cursor")
             return "file://" + home + "/.local/share/icons/hicolor/32x32/apps/co.anysphere.cursor.png";
         return "";
@@ -551,6 +559,8 @@ Singleton {
             return "Antigravity";
         if (p === "opencodego")
             return "OpenCode Go";
+        if (p === "commandcode")
+            return "Command Code";
         if (p === "cursor")
             return "Cursor";
         return id;
@@ -887,7 +897,7 @@ Singleton {
 
     Process {
         id: quotaProc
-        command: ["bash", "-c", "kodexbar-quotas usage --format json --provider all"]
+        command: ["bash", "-c", "kodexbar-quotas-plus"]
         stdout: StdioCollector {
             id: quotaOut
             onStreamFinished: {

@@ -75,6 +75,7 @@ Item {
         if (p === "grok") return "Grok";
         if (p === "antigravity") return "Antigravity";
         if (p === "opencodego") return "OpenCode Go";
+        if (p === "commandcode") return "Command Code";
         if (p === "cursor") return "Cursor";
         return id;
     }
@@ -86,6 +87,7 @@ Item {
         if (p === "grok") return "Gk";
         if (p === "antigravity") return "Ag";
         if (p === "opencodego") return "op";
+        if (p === "commandcode") return "cc";
         if (p === "cursor") return "cu";
         return p.substring(0, 2);
     }
@@ -95,6 +97,7 @@ Item {
         let home = (typeof Quickshell !== "undefined" && Quickshell.env) ? Quickshell.env("HOME") : "";
         if (p === "codex") return "file://" + home + "/.local/share/icons/hicolor/scalable/apps/codex.svg";
         if (p === "opencodego") return "file://" + home + "/.local/share/icons/hicolor/512x512/apps/ai.opencode.desktop.png";
+        if (p === "commandcode") return "file://" + home + "/.local/share/icons/hicolor/256x256/apps/commandcode.png";
         if (p === "cursor") return "file://" + home + "/.local/share/icons/hicolor/32x32/apps/co.anysphere.cursor.png";
         return "";
     }
@@ -483,7 +486,7 @@ Item {
 
                                         Text {
                                             Layout.alignment: Qt.AlignVCenter
-                                            text: window.providerName(card.entry.provider)
+                                            text: card.entry.displayName || window.providerName(card.entry.provider)
                                             font.family: ThemeBackend.fontFamily
                                             font.weight: Font.Bold
                                             font.pixelSize: window.s(12)
